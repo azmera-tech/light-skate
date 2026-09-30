@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.env.local
+storage-data/
+*.log
+e2e/out/
+coverage/

@@ -1,0 +1,19 @@
+{
+  "name": "light-skate",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Light Skate — skating venue operating system",
+  "workspaces": ["backend", "web"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev:api": "npm -w backend run dev",
+    "dev:web": "npm -w web run dev",
+    "build": "npm -w backend run build && npm -w web run build",
+    "start": "npm -w backend run start",
+    "migrate": "npm -w backend run migrate",
+    "seed": "npm -w backend run seed",
+    "test": "npm -w backend run test && npm -w web run test",
+    "typecheck": "npm -w backend run typecheck && npm -w web run typecheck",
+    "e2e": "node e2e/run.mjs"
+  }
+}
