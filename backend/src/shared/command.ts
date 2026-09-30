@@ -34,12 +34,13 @@ export function stableStringify(v: unknown): string {
   return '{' + Object.keys(o).filter((k) => o[k] !== undefined).sort().map((k) => JSON.stringify(k) + ':' + stableStringify(o[k])).join(',') + '}';
 }
 
-export function checkPermission(meta: CommandMeta, opts: { operation: string; permission?: string | string[] }) {
+export async function checkPermission(meta: CommandMeta, opts: { operation: string; permission?: string | string[] }) {
   if (!opts.permission) return;
   const needed = Array.isArray(opts.permission) ? opts.permission : [opts.permission];
   if (needed.some((p) => meta.user.permissions.has(p))) return;
   // Denied attempts are themselves security-relevant business events.
-  auditStandalone({
+  // Awaited: a denied attempt must be on record before the caller is told "no".
+  await auditStandalone({
     venueId: meta.user.venueId, userId: meta.user.id, action: 'security.permission_denied', entityType: 'operation',
     entityId: opts.operation, after: { required: needed, role: meta.user.roleCode }, deviceId: meta.user.deviceId,
     requestId: meta.requestId, ip: meta.ip,
@@ -60,7 +61,7 @@ export async function execute<T>(
   hashInput: unknown,
   fn: (ctx: Ctx) => Promise<T>,
 ): Promise<CommandResult<T>> {
-  checkPermission(meta, opts);
+  await checkPermission(meta, opts);
   const mode = opts.idempotency ?? 'none';
   if (mode === 'required' && !meta.idempotencyKey) {
     throw E.badRequest('IDEMPOTENCY_KEY_REQUIRED', 'This action needs an Idempotency-Key header so retries are safe.');

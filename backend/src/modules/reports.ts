@@ -20,7 +20,7 @@ export async function dailyReport(ctx: Ctx, date?: string) {
   const { start, end } = await dayBounds(ctx, venue.timezone, d);
   const q = (sql: string, extra: unknown[] = []) => one<any>(ctx.db, sql, [ctx.venueId, start, end, ...extra]);
 
-  const visits = await q(`SELECT count(*) FILTER (WHERE checked_in_at IS NOT NULL)::int AS visitors, count(*)::int AS created FROM visits WHERE venue_id=$1 AND local_date = $4::date`, [d]);
+  const visits = await one<any>(ctx.db, `SELECT count(*) FILTER (WHERE checked_in_at IS NOT NULL)::int AS visitors, count(*)::int AS created FROM visits WHERE venue_id=$1 AND local_date = $2::date`, [ctx.venueId, d]);
   const newCustomers = await q(`SELECT count(*)::int AS n FROM customers WHERE venue_id=$1 AND registered_at >= $2 AND registered_at < $3`);
   const sess = await q(
     `SELECT count(*) FILTER (WHERE started_at >= $2 AND started_at < $3)::int AS started,

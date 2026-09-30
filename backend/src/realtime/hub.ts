@@ -57,9 +57,10 @@ export class RealtimeHub {
     setTimeout(() => { this.reconnecting = false; this.connectListener(); }, 2000);
   }
 
-  broadcast(evt: { venueId: string; [k: string]: unknown }) {
-    const { venueId, ...rest } = evt;
-    const data = JSON.stringify({ type: 'event', ...rest });
+  /** Wire format: { type: 'event', event: 'SESSION_STARTED', aggregateType, aggregateId, payload, id, at } */
+  broadcast(evt: { venueId: string; type: string; [k: string]: unknown }) {
+    const { venueId, type, ...rest } = evt;
+    const data = JSON.stringify({ type: 'event', event: type, ...rest });
     for (const c of this.clients) if (c.venueId === venueId && c.socket.readyState === 1) c.socket.send(data);
   }
 
