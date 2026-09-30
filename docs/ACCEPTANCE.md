@@ -34,6 +34,10 @@ info, wristbands (optional), day close, device registry, offline command queue, 
 pricing rules (day type, child/adult), configurable policies.
 
 ## NOT built / known limitations (deliberate, so nothing is pretended)
+* **Retention (#64):** configurable retention is implemented and enforced by a worker for **customer photos** (profile / visit)
+  and **incident attachments**. Waivers, payments, incident records, visits and audit logs have **no automatic deletion
+  or archival job yet** — they are kept until a documented policy (and an archival job) is defined with the venue's
+  legal adviser. Customer erasure (`/customers/:id/erase`) anonymises personal data while preserving these records.
 * **Memberships, reservations, customer portal, loyalty, multi-location UI** — architecture only (`venue_id` on every
   operational row, `membership: null` placeholder on the customer profile).
 * **Payment providers:** only the *manual* provider (staff attest receipt of cash/transfer/card-terminal/Telebirr, with a
