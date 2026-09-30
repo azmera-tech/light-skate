@@ -3,8 +3,13 @@
   "private": true,
   "version": "1.0.0",
   "description": "Light Skate — skating venue operating system",
-  "workspaces": ["backend", "web"],
-  "engines": { "node": ">=20" },
+  "workspaces": [
+    "backend",
+    "web"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev:api": "npm -w backend run dev",
     "dev:web": "npm -w web run dev",
@@ -15,5 +20,8 @@
     "test": "npm -w backend run test && npm -w web run test",
     "typecheck": "npm -w backend run typecheck && npm -w web run typecheck",
     "e2e": "node e2e/run.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
   }
 }

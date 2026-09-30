@@ -30,7 +30,7 @@ export async function createVenue(db: Queryable, opts: { name: string; slug: str
     const role = (await db.query(`INSERT INTO roles (venue_id, code, name) VALUES ($1,$2,$3) RETURNING id`, [v.id, r.code, r.name])).rows[0];
     for (const p of r.permissions) await db.query('INSERT INTO role_permissions (role_id, permission_code) VALUES ($1,$2)', [role.id, p]);
   }
-  await db.query('INSERT INTO capacity_rules (venue_id, max_capacity, effective_from) VALUES ($1,$2, now() - interval \'1 day\')', [v.id, opts.capacity ?? 60]);
+  await db.query('INSERT INTO capacity_rules (venue_id, max_capacity, effective_from) VALUES ($1,$2,$3)', [v.id, opts.capacity ?? 60, new Date('2000-01-01T00:00:00Z')]);
   const w = (await db.query(`INSERT INTO waivers (venue_id, code, name) VALUES ($1,'STANDARD','Skating rules & waiver') RETURNING id`, [v.id])).rows[0];
   await db.query(`INSERT INTO waiver_versions (waiver_id, venue_id, version, title, body, is_current) VALUES ($1,$2,1,$3,$4,true)`, [w.id, v.id, DEFAULT_WAIVER_TITLE, DEFAULT_WAIVER_BODY]);
   // Default price list (ETB minor units: 200 ETB = 20000)

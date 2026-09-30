@@ -158,3 +158,14 @@ describe('realtime', () => {
     expect(one.body.events.map((e: any) => e.eventType)).toEqual(expect.arrayContaining(['SESSION_EXTENDED', 'SESSION_ENDED']));
   });
 });
+
+describe('background housekeeping', () => {
+  it('runs without error and prunes only expired idempotency keys / old auth sessions', async () => {
+    const { runHousekeeping } = await import('../src/worker/index.js');
+    await pool.query(`INSERT INTO idempotency_keys (venue_id, user_id, key, operation, request_hash, expires_at) VALUES ($1,$2,'old-key-aaaaaaaa','x','h', now() - interval '1 day')`, [w.venueId, w.userIds.owner]);
+    await pool.query(`INSERT INTO idempotency_keys (venue_id, user_id, key, operation, request_hash, expires_at) VALUES ($1,$2,'new-key-aaaaaaaa','x','h', now() + interval '1 day')`, [w.venueId, w.userIds.owner]);
+    await runHousekeeping(new Date());
+    const keys = (await pool.query(`SELECT key FROM idempotency_keys WHERE venue_id=$1 AND key IN ('old-key-aaaaaaaa','new-key-aaaaaaaa')`, [w.venueId])).rows.map((r) => r.key);
+    expect(keys).toEqual(['new-key-aaaaaaaa']);
+  });
+});

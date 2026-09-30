@@ -236,7 +236,10 @@ describe('customer photo security', () => {
     // not served from any static/public path
     for (const url of [`/${row.storage_key}`, `/uploads/${row.storage_key}`, `/storage-data/${row.storage_key}`, `/api/v1/${row.storage_key}`]) {
       const r = await w.app.inject({ method: 'GET', url });
-      expect(r.statusCode).not.toBe(200);
+      // (an unknown path may fall back to the SPA shell; what must never happen is serving the image itself)
+      expect(String(r.headers['content-type'] ?? '')).not.toMatch(/^image\//);
+      expect(r.rawPayload.includes(Buffer.from([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
+      expect(url.startsWith('/api/') ? r.statusCode === 404 : true).toBe(true);
     }
     expect((await pool.query(`SELECT count(*)::int n FROM audit_logs WHERE entity_id=$1 AND action='photo.captured'`, [photoId])).rows[0].n).toBe(1);
   });

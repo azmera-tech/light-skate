@@ -34,7 +34,7 @@ export async function runRetention(now = clock.now()) {
 
 export async function runHousekeeping(now = clock.now()) {
   await pool.query('DELETE FROM idempotency_keys WHERE expires_at < $1', [now]);
-  await pool.query('DELETE FROM auth_sessions WHERE expires_at < $1 - interval \'7 days\'', [now]);
+  await pool.query('DELETE FROM auth_sessions WHERE expires_at < $1::timestamptz - interval \'7 days\'', [now]);
   // TODO(phase 2): payment reconciliation against provider statements; equipment maintenance reminders; scheduled daily report delivery.
 }
 
