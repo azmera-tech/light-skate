@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Release builds get NO network access at all without this — the debug/profile manifests
-         carry it automatically, but the main manifest (used by `flutter build apk --release`,
-         i.e. every real .apk) does not, by Flutter template default. -->
+         carry it automatically, but the main manifest (used by a real release build, i.e. every
+         actual .apk) does not, by Flutter template default. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <application
