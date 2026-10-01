@@ -31,20 +31,24 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build apk --release --dart-define=API_BASE_URL=${{ github.event.inputs.api_base_url || 'http://localhost:8090' }}
+      # --split-per-abi produces one APK per CPU architecture instead of one fat APK containing all
+      # three, so the file a single device actually needs is a fraction of the combined size.
+      - run: flutter build apk --release --split-per-abi --dart-define=API_BASE_URL=${{ github.event.inputs.api_base_url || 'http://localhost:8090' }}
       - uses: actions/upload-artifact@v4
         with:
-          name: light-skate-mobile.apk
-          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          name: light-skate-mobile-apks
+          path: mobile/build/app/outputs/flutter-apk/*.apk
           retention-days: 30
       # Actions artifacts above live on Azure Blob Storage, which some network setups (including the
       # sandbox this project was built in) cannot reach. This step gives a second, plain-git path to
       # the same file: it force-pushes the built APK to a dedicated orphan branch, so it can be pulled
       # with nothing more than `git fetch` + `git show` against github.com itself.
+      # arm64-v8a covers virtually every Android device sold since ~2019, and is a fraction of the
+      # combined multi-arch APK size, so that's the one published here.
       - name: Also publish the APK on the apk-builds branch (git-only download path)
         working-directory: ${{ github.workspace }}
         run: |
-          cp mobile/build/app/outputs/flutter-apk/app-release.apk /tmp/light-skate-mobile.apk
+          cp mobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk /tmp/light-skate-mobile.apk
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout --orphan apk-builds-tmp
