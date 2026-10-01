@@ -20,7 +20,9 @@ import { closeDay } from './modules/dayclose.js';
 import { demoAvatarPng } from './storage/demoimage.js';
 import { localDateIn, addDaysToDate } from './shared/time.js';
 
-const PASSWORD = process.env.DEMO_PASSWORD ?? 'LightSkate-Demo-2026!';
+// `??` only falls back on null/undefined, not on an empty string — and a present-but-blank
+// "DEMO_PASSWORD=" line in a .env file is an empty string, so this must use `||`.
+const PASSWORD = process.env.DEMO_PASSWORD || 'LightSkate-Demo-2026!';
 const SLUG = 'light-skate-demo';
 
 async function loadAuth(userId: string, deviceId: string | null): Promise<AuthUser> {

@@ -5,6 +5,11 @@ import { config as loadDotenv } from 'dotenv';
 // so production deployments that inject real env vars are unaffected either way.
 loadDotenv();
 
+// A present-but-blank line in .env (e.g. "SIGNING_SECRET=" left as in the template) is an empty string, not
+// undefined — which would silently defeat every "env.X ?? default" below (an empty signing secret, for example,
+// is a real security weakness, not just a wrong default). Treat blank the same as "not set" everywhere.
+for (const k of Object.keys(process.env)) if (process.env[k] === '') delete process.env[k];
+
 function bool(v: string | undefined, d: boolean) {
   if (v === undefined) return d;
   return ['1', 'true', 'yes', 'on'].includes(v.toLowerCase());
