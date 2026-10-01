@@ -13,6 +13,7 @@ Future<Uint8List?> captureCustomerPhoto(BuildContext context, {String title = 'T
 
   while (true) {
     if (bytes == null) {
+      if (!context.mounted) return null;
       final choice = await showModalBottomSheet<String>(
         context: context,
         builder: (context) => SafeArea(

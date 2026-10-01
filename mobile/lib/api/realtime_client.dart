@@ -37,7 +37,7 @@ class RealtimeClient {
   void _open() {
     if (_closed) return;
     onStatus?.call('connecting');
-    final wsUrl = api.baseUrl.replaceFirst('http', 'ws') + '/api/v1/realtime';
+    final wsUrl = '${api.baseUrl.replaceFirst('http', 'ws')}/api/v1/realtime';
     try {
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
     } catch (_) {

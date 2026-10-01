@@ -101,6 +101,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       final json = await _api.get('/products?customerId=${_detail!.customerId}') as Map<String, dynamic>;
       extensions = ProductsResponse.fromJson(json).extensions;
     } catch (_) {}
+    if (!mounted) return;
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -316,6 +317,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (note == null) return;
     }
     await _run(
+      // The null-aware `?key:` marker checks the KEY's nullability, not the value's, so it
+      // doesn't apply to this conditional-value case.
+      // ignore: use_null_aware_elements
       () => _api.post('/equipment/${a.id}/return', {'condition': damaged ? 'DAMAGED' : 'GOOD', if (note != null) 'note': note}),
       successMessage: 'Equipment returned.',
     );

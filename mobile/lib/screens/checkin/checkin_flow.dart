@@ -774,6 +774,9 @@ class _CheckInFlowState extends State<CheckInFlow> {
       final body = <String, dynamic>{
         if (_selectedEquipmentIds.isNotEmpty) 'equipmentIds': _selectedEquipmentIds.toList(),
         if (_wristband != null) 'wristband': _wristband,
+        // The null-aware `?key:` marker checks the KEY's nullability, not the value's, so it
+        // doesn't apply to this conditional-value case.
+        // ignore: use_null_aware_elements
         if (overrideCapacityReason != null) 'overrideCapacityReason': overrideCapacityReason,
       };
       await _api.post('/sessions/$_sessionId/start', body);
