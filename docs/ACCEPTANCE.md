@@ -60,9 +60,16 @@ pricing rules (day type, child/adult), configurable policies.
 * **Data-subject export** and a breach-response workflow are not built. The waiver text is a *template* requiring legal review.
 * **Docker files** are provided but were not built/tested in the authoring environment (no Docker daemon).
 * **First-venue bootstrap** in production is manual (no `init-venue` CLI yet).
-* **Flutter mobile app (`mobile/`)** has sign-in and the live dashboard built and verified against the real backend
-  (real login, real authenticated photo fetches, a genuinely ticking countdown, zero console errors — see
-  `mobile/README.md`). Every other screen (check-in, customer search/profile, equipment, incidents, admin) exists in
-  the web app only, not yet ported. No `.apk` is included: building one needs Android SDK tooling the authoring
-  sandbox's network policy blocks; `mobile/README.md` gives a CI workflow that builds one automatically with no local
-  install, and the steps for a local build. iOS needs a Mac with Xcode regardless.
+* **Flutter mobile app (`mobile/`)** is now a full staff-operations client, not just sign-in + dashboard: check-in
+  (search/register, photo, waiver, session, payment, equipment, start), session management (extend/pause/end/cancel/
+  correct), customers (search/profile/edit/erase), equipment, incidents, daily history, and the full admin section
+  (reports/settings/pricing/staff/devices/audit/day-close) — all against the real backend, permission-gated via
+  `/auth/me`'s permissions array. Verified end-to-end (Flutter web + Playwright against a real backend + real seeded
+  data): sign-in, the full check-in flow for a returning customer through to a live started session, dashboard KPIs
+  and photos. See `mobile/README.md` for the full built/limitations breakdown — notably: realtime push is dashboard-only
+  (other screens poll), there's no offline command queue on mobile yet (the backend's limited one is web-only so far),
+  and CSV export is copy-text rather than a file download (no CSV endpoint exists server-side). No new backend work
+  was needed for any of this; two real bugs were found and fixed by the live testing (a release-build Android manifest
+  missing the INTERNET permission entirely, and several check-in wizard steps whose "Continue" button never re-enabled
+  after a selection). iOS is untested (no Mac/Xcode in the authoring sandbox); `mobile/README.md`'s CI workflow builds
+  a real signed-by-debug-key release `.apk` automatically on GitHub's own Android-SDK runners.

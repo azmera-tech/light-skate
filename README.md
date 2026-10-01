@@ -8,8 +8,9 @@ app is a fast, touch-friendly view on top of them.
   equipment, incident report, one-tap emergency information.
 * **Admin** (`/#/admin`, permission-gated): overview, customers, visits, payments + refunds, equipment, incidents, staff &
   roles, reports (daily/range, CSV), pricing, capacity & policies, devices, close-day, audit log.
-* **Flutter mobile app** (`mobile/`, in progress): a native client against the same API — sign-in and the live rink
-  dashboard are built and verified; see [mobile/README.md](mobile/README.md) for scope and how to get a real `.apk`.
+* **Flutter mobile app** (`mobile/`): a native client against the same API, covering the full staff workflow —
+  check-in, sessions, customers, equipment, incidents, history, and admin; see
+  [mobile/README.md](mobile/README.md) for scope, demo credentials, and how to get a real `.apk`.
 
 ## Quick start
 
