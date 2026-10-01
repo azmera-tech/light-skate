@@ -14,6 +14,9 @@ on:
         required: false
         default: 'http://localhost:8090'
 
+permissions:
+  contents: write # needed by the "publish APK to repo" step below
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,3 +37,19 @@ jobs:
           name: light-skate-mobile.apk
           path: mobile/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+      # Actions artifacts above live on Azure Blob Storage, which some network setups (including the
+      # sandbox this project was built in) cannot reach. This step gives a second, plain-git path to
+      # the same file: it force-pushes the built APK to a dedicated orphan branch, so it can be pulled
+      # with nothing more than `git fetch` + `git show` against github.com itself.
+      - name: Also publish the APK on the apk-builds branch (git-only download path)
+        working-directory: ${{ github.workspace }}
+        run: |
+          cp mobile/build/app/outputs/flutter-apk/app-release.apk /tmp/light-skate-mobile.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan apk-builds-tmp
+          git rm -rf . >/dev/null 2>&1 || true
+          cp /tmp/light-skate-mobile.apk light-skate-mobile.apk
+          git add light-skate-mobile.apk
+          git commit -m "APK build from ${{ github.sha }} ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          git push origin apk-builds-tmp:apk-builds --force
