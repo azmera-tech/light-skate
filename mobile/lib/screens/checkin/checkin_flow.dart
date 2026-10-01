@@ -349,14 +349,14 @@ class _CheckInFlowState extends State<CheckInFlow> {
 
   Widget _buildWaiverStep() {
     final isMinor = _profile!.isMinor;
-    final valid = _waiverChecked && (!isMinor || (_guardianNameCtrl.text.trim().isNotEmpty && _guardianPhoneCtrl.text.trim().isNotEmpty));
-    return _StepScaffold(
-      title: _waiver?.title ?? 'Waiver',
-      subtitle: _waiver != null ? 'Version ${_waiver!.version}' : null,
-      busy: _busy,
-      error: _error,
-      body: StatefulBuilder(builder: (context, setLocal) {
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    return StatefulBuilder(builder: (context, setLocal) {
+      final valid = _waiverChecked && (!isMinor || (_guardianNameCtrl.text.trim().isNotEmpty && _guardianPhoneCtrl.text.trim().isNotEmpty));
+      return _StepScaffold(
+        title: _waiver?.title ?? 'Waiver',
+        subtitle: _waiver != null ? 'Version ${_waiver!.version}' : null,
+        busy: _busy,
+        error: _error,
+        body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Container(
             constraints: const BoxConstraints(maxHeight: 220),
             padding: const EdgeInsets.all(12),
@@ -387,12 +387,12 @@ class _CheckInFlowState extends State<CheckInFlow> {
           const Text('Signature (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           SignaturePad(key: _signatureKey),
-        ]);
-      }),
-      actions: [
-        FilledButton(onPressed: !valid || _busy ? null : _submitWaiver, child: const Text('Accept & continue')),
-      ],
-    );
+        ]),
+        actions: [
+          FilledButton(onPressed: !valid || _busy ? null : _submitWaiver, child: const Text('Accept & continue')),
+        ],
+      );
+    });
   }
 
   Future<void> _submitWaiver() async {
@@ -443,14 +443,14 @@ class _CheckInFlowState extends State<CheckInFlow> {
       _loadProducts();
       return const Center(child: CircularProgressIndicator());
     }
-    final discountValid = !_applyDiscount || (int.tryParse(_discountAmountCtrl.text) != null && _discountReasonCtrl.text.trim().length >= 3);
     final canDiscount = _api.me?.can('payment.discount') ?? false;
-    return _StepScaffold(
-      title: 'Choose session',
-      busy: _busy,
-      error: _error,
-      body: StatefulBuilder(builder: (context, setLocal) {
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    return StatefulBuilder(builder: (context, setLocal) {
+      final discountValid = !_applyDiscount || (int.tryParse(_discountAmountCtrl.text) != null && _discountReasonCtrl.text.trim().length >= 3);
+      return _StepScaffold(
+        title: 'Choose session',
+        busy: _busy,
+        error: _error,
+        body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
@@ -513,17 +513,17 @@ class _CheckInFlowState extends State<CheckInFlow> {
               ),
             ],
           ],
-        ]);
-      }),
-      actions: [
-        FilledButton(
-          onPressed: (_selectedProduct == null || !discountValid || _busy) ? null : _submitSession,
-          child: Text(_selectedProduct == null
-              ? 'Continue'
-              : 'Continue — ${formatMoney(_selectedProduct!.priceMinor - (_applyDiscount ? (int.tryParse(_discountAmountCtrl.text) ?? 0) : 0), _selectedProduct!.currency)}'),
-        ),
-      ],
-    );
+        ]),
+        actions: [
+          FilledButton(
+            onPressed: (_selectedProduct == null || !discountValid || _busy) ? null : _submitSession,
+            child: Text(_selectedProduct == null
+                ? 'Continue'
+                : 'Continue — ${formatMoney(_selectedProduct!.priceMinor - (_applyDiscount ? (int.tryParse(_discountAmountCtrl.text) ?? 0) : 0), _selectedProduct!.currency)}'),
+          ),
+        ],
+      );
+    });
   }
 
   Future<void> _submitSession() async {
@@ -565,18 +565,18 @@ class _CheckInFlowState extends State<CheckInFlow> {
   Widget _buildPaymentStep() {
     final s = _session!;
     final due = s.dueMinor;
-    final method = _cfg!.paymentMethods.where((m) => m.code == _paymentMethod).firstOrNull;
-    final tendered = int.tryParse(_cashTenderedCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
-    final change = (_paymentMethod == 'CASH' && tendered != null && tendered >= due) ? tendered - due : null;
-    final needsRef = method?.requiresReference ?? false;
-    final valid = _paymentMethod != null && (!needsRef || _referenceCtrl.text.trim().isNotEmpty || _unconfirmed);
+    return StatefulBuilder(builder: (context, setLocal) {
+      final method = _cfg!.paymentMethods.where((m) => m.code == _paymentMethod).firstOrNull;
+      final tendered = int.tryParse(_cashTenderedCtrl.text.replaceAll(RegExp(r'[^0-9]'), ''));
+      final change = (_paymentMethod == 'CASH' && tendered != null && tendered >= due) ? tendered - due : null;
+      final needsRef = method?.requiresReference ?? false;
+      final valid = _paymentMethod != null && (!needsRef || _referenceCtrl.text.trim().isNotEmpty || _unconfirmed);
 
-    return _StepScaffold(
-      title: 'Payment',
-      busy: _busy,
-      error: _error,
-      body: StatefulBuilder(builder: (context, setLocal) {
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      return _StepScaffold(
+        title: 'Payment',
+        busy: _busy,
+        error: _error,
+        body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Card(
             color: LsColors.brandSoft,
             margin: EdgeInsets.zero,
@@ -631,18 +631,18 @@ class _CheckInFlowState extends State<CheckInFlow> {
               if (change != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Change to give: ${formatMoney(change, _cfg!.currency)}')),
             ],
           ],
-        ]);
-      }),
-      actions: [
-        if (due <= 0)
-          FilledButton(onPressed: _busy ? null : () => _pollPaymentThenAdvance(), child: const Text('Continue'))
-        else
-          FilledButton(
-            onPressed: (!valid || _busy) ? null : _submitPayment,
-            child: Text(_unconfirmed ? 'Record pending payment' : 'Record ${formatMoney(due, _cfg!.currency)} received'),
-          ),
-      ],
-    );
+        ]),
+        actions: [
+          if (due <= 0)
+            FilledButton(onPressed: _busy ? null : () => _pollPaymentThenAdvance(), child: const Text('Continue'))
+          else
+            FilledButton(
+              onPressed: (!valid || _busy) ? null : _submitPayment,
+              child: Text(_unconfirmed ? 'Record pending payment' : 'Record ${formatMoney(due, _cfg!.currency)} received'),
+            ),
+        ],
+      );
+    });
   }
 
   Future<void> _pollPaymentThenAdvance() async {
@@ -701,16 +701,16 @@ class _CheckInFlowState extends State<CheckInFlow> {
 
   Widget _buildStartStep() {
     final s = _session!;
-    final sizes = _availableEquipment.map((e) => e.size).whereType<String>().toSet().toList()..sort();
-    final filtered = _equipmentSizeFilter == null ? _availableEquipment : _availableEquipment.where((e) => e.size == _equipmentSizeFilter).toList();
-    final requireEquipment = _cfg!.equipmentRequiredForStart && _selectedEquipmentIds.isEmpty;
+    return StatefulBuilder(builder: (context, setLocal) {
+      final sizes = _availableEquipment.map((e) => e.size).whereType<String>().toSet().toList()..sort();
+      final filtered = _equipmentSizeFilter == null ? _availableEquipment : _availableEquipment.where((e) => e.size == _equipmentSizeFilter).toList();
+      final requireEquipment = _cfg!.equipmentRequiredForStart && _selectedEquipmentIds.isEmpty;
 
-    return _StepScaffold(
-      title: 'Ready to start',
-      busy: _busy,
-      error: _error,
-      body: StatefulBuilder(builder: (context, setLocal) {
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      return _StepScaffold(
+        title: 'Ready to start',
+        busy: _busy,
+        error: _error,
+        body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Center(child: AuthedPhoto(photoId: _profile!.photoId, name: _profile!.fullName, size: 96)),
           const SizedBox(height: 8),
           Center(child: Text(_profile!.fullName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17))),
@@ -752,17 +752,17 @@ class _CheckInFlowState extends State<CheckInFlow> {
                 child: Text('This venue requires skates to be issued before starting.', style: TextStyle(color: LsColors.orange)),
               ),
           ],
-        ]);
-      }),
-      actions: [
-        FilledButton.icon(
-          style: FilledButton.styleFrom(backgroundColor: LsColors.green, minimumSize: const Size.fromHeight(52)),
-          onPressed: (requireEquipment || _busy) ? null : _submitStart,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('START SKATING', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
-        ),
-      ],
-    );
+        ]),
+        actions: [
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: LsColors.green, minimumSize: const Size.fromHeight(52)),
+            onPressed: (requireEquipment || _busy) ? null : _submitStart,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('START SKATING', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+          ),
+        ],
+      );
+    });
   }
 
   Future<void> _submitStart({String? overrideCapacityReason}) async {
@@ -1080,13 +1080,13 @@ class _CustomerDetailsStepState extends State<_CustomerDetailsStep> {
 
   @override
   Widget build(BuildContext context) {
-    final valid = _nameCtrl.text.trim().length >= 2;
-    return _StepScaffold(
-      title: 'New customer',
-      busy: widget.busy,
-      error: widget.error,
-      body: StatefulBuilder(builder: (context, setLocal) {
-        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    return StatefulBuilder(builder: (context, setLocal) {
+      final valid = _nameCtrl.text.trim().length >= 2;
+      return _StepScaffold(
+        title: 'New customer',
+        busy: widget.busy,
+        error: widget.error,
+        body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           TextField(controller: _nameCtrl, autofocus: true, decoration: const InputDecoration(labelText: 'Full name'), onChanged: (_) => setLocal(() {})),
           const SizedBox(height: 10),
           TextField(controller: _phoneCtrl, decoration: const InputDecoration(labelText: 'Phone'), keyboardType: TextInputType.phone),
@@ -1114,28 +1114,28 @@ class _CustomerDetailsStepState extends State<_CustomerDetailsStep> {
           TextField(controller: _guardianNameCtrl, decoration: InputDecoration(labelText: _looksMinor ? 'Guardian name' : 'Emergency contact name (optional)')),
           const SizedBox(height: 10),
           TextField(controller: _guardianPhoneCtrl, decoration: InputDecoration(labelText: _looksMinor ? 'Guardian phone' : 'Emergency contact phone (optional)'), keyboardType: TextInputType.phone),
-        ]);
-      }),
-      actions: [
-        OutlinedButton(onPressed: widget.busy ? null : widget.onBack, child: const Text('Back')),
-        FilledButton(
-          onPressed: (!valid || widget.busy)
-              ? null
-              : () => widget.onSubmit({
-                    'fullName': _nameCtrl.text.trim(),
-                    'phone': _phoneCtrl.text.trim(),
-                    if (_dob != null) 'dateOfBirth': fmtDate(_dob!),
-                    if (_emailCtrl.text.trim().isNotEmpty) 'email': _emailCtrl.text.trim(),
-                    if (_guardianNameCtrl.text.trim().isNotEmpty || _guardianPhoneCtrl.text.trim().isNotEmpty)
-                      'emergencyContact': {
-                        'name': _guardianNameCtrl.text.trim(),
-                        'phone': _guardianPhoneCtrl.text.trim(),
-                        'isGuardian': _looksMinor,
-                      },
-                  }),
-          child: const Text('Save & continue'),
-        ),
-      ],
-    );
+        ]),
+        actions: [
+          OutlinedButton(onPressed: widget.busy ? null : widget.onBack, child: const Text('Back')),
+          FilledButton(
+            onPressed: (!valid || widget.busy)
+                ? null
+                : () => widget.onSubmit({
+                      'fullName': _nameCtrl.text.trim(),
+                      'phone': _phoneCtrl.text.trim(),
+                      if (_dob != null) 'dateOfBirth': fmtDate(_dob!),
+                      if (_emailCtrl.text.trim().isNotEmpty) 'email': _emailCtrl.text.trim(),
+                      if (_guardianNameCtrl.text.trim().isNotEmpty || _guardianPhoneCtrl.text.trim().isNotEmpty)
+                        'emergencyContact': {
+                          'name': _guardianNameCtrl.text.trim(),
+                          'phone': _guardianPhoneCtrl.text.trim(),
+                          'isGuardian': _looksMinor,
+                        },
+                    }),
+            child: const Text('Save & continue'),
+          ),
+        ],
+      );
+    });
   }
 }
