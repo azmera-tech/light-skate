@@ -51,3 +51,8 @@ e2e/run.mjs            browser acceptance run
 Timestamps not countdowns · backend decides everything · commands not CRUD · one transaction per command · idempotency on
 money and other critical commands · immutable event/audit history · outbox for side effects · realtime is only a hint ·
 protected photos · least-privilege + object-level authorisation · integer money · venue-local days.
+
+## Install on a phone/tablet (no app store)
+Host the app over **HTTPS** (see docs/DEPLOYMENT.md), open it in Chrome (Android) or Safari (iOS), then
+*Menu → Install app / Add to Home screen*. It opens full-screen like a native app. The service worker caches only
+the app shell, never API data or photos. (Camera access needs HTTPS or `localhost`.)
