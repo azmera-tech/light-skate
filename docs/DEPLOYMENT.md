@@ -6,25 +6,59 @@ on managed databases ensure the migrating role may create trusted extensions), a
 front of the app (a reverse proxy such as Caddy/nginx; WebSockets must be proxied — `Upgrade` headers).
 
 ## Quick start (development)
+
+`backend/.env` is loaded automatically at startup (via `dotenv`) and never overrides a variable your shell/Docker/CI
+already set — so the same file works whether you launch with `npm run dev:api`, `npm start`, `npm run migrate`, or
+`npm run seed`. This is the easiest path on every OS, Windows included, since it avoids `export` (bash-only) and
+`$env:` (PowerShell-only) entirely.
+
 ```bash
 npm install
-createdb lightskate                                   # or any DATABASE_URL
-export DATABASE_URL=postgres://user:pass@localhost:5432/lightskate
-npm run migrate                                        # applies backend/migrations/*.sql in order
-npm run seed                                           # demo venue, staff, 36 skates, history (idempotent)
-npm run dev:api                                        # API + embedded worker on :8080
-npm run dev:web                                        # Vite on :5173 (proxies /api and the WebSocket)
+createdb lightskate                    # or any DATABASE_URL — see "Getting a database" below
+cp backend/.env.example backend/.env   # then edit DATABASE_URL in that file
+npm run migrate                        # applies backend/migrations/*.sql in order
+npm run seed                           # demo venue, staff, 36 skates, history (idempotent)
+npm run dev:api                        # API + embedded worker on :8080
+npm run dev:web                        # Vite on :5173 (proxies /api and the WebSocket)
 ```
 Demo logins (`*@lightskate.demo`, password from `DEMO_PASSWORD`, default `LightSkate-Demo-2026!`):
 `owner`, `manager`, `supervisor`, `frontdesk`, `rental`. **Never run the seed in production.**
 
+If you'd rather set variables in the shell instead of a file: bash/macOS/Linux uses `export NAME=value`; **PowerShell
+uses `$env:NAME = "value"`** (not `export` — that's bash-only and will error as "term not recognized"). Either way,
+a `backend/.env` file persists across terminal sessions, which a shell-set variable does not.
+
+### Getting a database
+Any of these give you a `DATABASE_URL`:
+* **Local install:** [postgresql.org/download](https://www.postgresql.org/download/) (Windows: run the installer, then
+  use pgAdmin or `psql` to run `CREATE DATABASE lightskate;`; the URL is
+  `postgres://postgres:<the password you set>@localhost:5432/lightskate`).
+* **Docker, no local install needed:** `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=devpass postgres:16`, then
+  `DATABASE_URL=postgres://postgres:devpass@localhost:5432/postgres` (or create a `lightskate` database first).
+* **Free hosted Postgres** (no install at all): Neon, Supabase, or Railway all give a ready-made connection string
+  from their dashboard in under a minute — paste it straight into `backend/.env`.
+
+### Windows (PowerShell)
+Everything above works as-is on Windows once you have a `DATABASE_URL` (the npm scripts spawn `cmd.exe` to run,
+regardless of which shell you typed the command in, so `&&` in a script works even though PowerShell itself only
+supports `&&` from v7+). The only Windows-specific traps:
+* Use `backend/.env` (above) rather than typing `export ...` — that command doesn't exist in PowerShell.
+  To set a variable for the current PowerShell session only, the equivalent is `$env:DATABASE_URL = "postgres://…"`.
+* Running `npm audit fix --force` can bump dependencies to new major versions. We tested the upgrades it typically
+  proposes here (`@fastify/static` v10, `vitest` v5) against the full test suite and they pass, so it's safe to run;
+  it's just unnecessary for getting the app running.
+* If `npm start` reports a port already in use, another process has 8080 — set `PORT=8081` (or any free port) in
+  `backend/.env`.
+
 ## Production (one node)
 ```bash
-npm ci && npm run build                # compiles backend to backend/dist and web to web/dist
-cp .env.example .env                   # set DATABASE_URL, SIGNING_SECRET (openssl rand -hex 32), STORAGE_DIR
-cd backend && node dist/server.js      # runs pending migrations at start, serves API + web app
+npm ci && npm run build                        # compiles backend to backend/dist and web to web/dist
+cp backend/.env.example backend/.env           # set DATABASE_URL, SIGNING_SECRET (openssl rand -hex 32), STORAGE_DIR
+cd backend && node dist/server.js              # runs pending migrations at start, serves API + web app
 ```
-or `docker compose up -d --build` (see `docker-compose.yml`; the Dockerfile was not built in the authoring environment).
+or `cp .env.example .env` (root — set `POSTGRES_PASSWORD` + `SIGNING_SECRET`) then `docker compose up -d --build`
+(see `docker-compose.yml`; note this is a *different* `.env` file, read by `docker compose` itself, not the app — the
+Dockerfile was not built in the authoring environment, so test it before relying on it).
 
 Create the first venue/owner (production does not seed): run `npm run seed` once on a scratch database to see the
 shape, or insert via a one-off script using `bootstrap.createVenue/createUser`. (TODO: interactive `npm run init-venue`.)

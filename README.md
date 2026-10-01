@@ -11,14 +11,22 @@ app is a fast, touch-friendly view on top of them.
 
 ## Quick start
 
-```bash
-npm install
-export DATABASE_URL=postgres://user:pass@localhost:5432/lightskate   # an empty PostgreSQL ≥ 14 database
-npm run migrate && npm run seed        # schema + clearly-fake demo venue (owner/manager/supervisor/frontdesk/rental @lightskate.demo)
-npm run build && npm start             # http://localhost:8080  (API + worker + web app)
-# development: npm run dev:api  and  npm run dev:web  (http://localhost:5173)
-```
-Demo password for every seeded user: `LightSkate-Demo-2026!` (override with `DEMO_PASSWORD`). Details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Needs Node.js ≥ 20 and a PostgreSQL ≥ 14 server (local install, or a free one from Neon/Supabase/Railway/ElephantSQL —
+anything that gives you a `postgres://` connection string).
+
+1. `npm install`
+2. Create `backend/.env` (copy `.env.example`) with at least:
+   ```
+   DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/lightskate
+   ```
+   It's loaded automatically — no `export`/`$env:` needed, and this step is identical on Windows, macOS and Linux.
+3. `npm run migrate` then `npm run seed` (clearly-fake demo venue: owner/manager/supervisor/frontdesk/rental `@lightskate.demo`)
+4. `npm run build` then `npm start` → http://localhost:8080
+   (development instead: `npm run dev:api` and, in a second terminal, `npm run dev:web` → http://localhost:5173)
+
+Demo password for every seeded user: `LightSkate-Demo-2026!` (override with `DEMO_PASSWORD` in `.env`).
+**Windows users:** see [docs/DEPLOYMENT.md § Windows](docs/DEPLOYMENT.md#windows-powershell) for PostgreSQL install options
+and PowerShell-specific notes. Full details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Tests
 

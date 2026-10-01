@@ -6,5 +6,4 @@ storage-data/
 *.log
 e2e/out/
 coverage/
-storage-data/
 light-skate.zip

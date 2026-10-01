@@ -1,4 +1,9 @@
 import { randomBytes } from 'node:crypto';
+import { config as loadDotenv } from 'dotenv';
+
+// Loads backend/.env if present. Never overrides a variable the environment (shell, Docker, CI) already set,
+// so production deployments that inject real env vars are unaffected either way.
+loadDotenv();
 
 function bool(v: string | undefined, d: boolean) {
   if (v === undefined) return d;
