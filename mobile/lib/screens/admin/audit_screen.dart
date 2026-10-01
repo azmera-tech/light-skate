@@ -191,7 +191,7 @@ class _AuditScreenState extends State<AuditScreen> {
                             controller: _scrollCtrl,
                             padding: const EdgeInsets.fromLTRB(10, 0, 10, 20),
                             itemCount: _entries.length + (_hasMore ? 1 : 0),
-                            separatorBuilder: (_, __) => const Divider(height: 1, color: LsColors.border),
+                            separatorBuilder: (_, _) => const Divider(height: 1, color: LsColors.border),
                             itemBuilder: (context, i) {
                               if (i >= _entries.length) {
                                 return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));

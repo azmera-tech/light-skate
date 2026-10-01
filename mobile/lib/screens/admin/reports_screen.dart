@@ -322,7 +322,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _totalsGrid(RangeReport r) {
-    int _int(String k) => (r.totals[k] as num?)?.toInt() ?? 0;
+    int totalInt(String k) => (r.totals[k] as num?)?.toInt() ?? 0;
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -331,12 +331,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
       crossAxisSpacing: 10,
       childAspectRatio: 2.4,
       children: [
-        _kpi('Sessions started', '${_int('sessionsStarted')}'),
-        _kpi('Sessions completed', '${_int('sessionsCompleted')}'),
-        _kpi('Unique customers', '${_int('uniqueCustomers')}'),
-        _kpi('Revenue', formatMoney(_int('revenueMinor'), r.currency)),
-        _kpi('Refunds', formatMoney(_int('refundsMinor'), r.currency)),
-        _kpi('Discounts', formatMoney(_int('discountsMinor'), r.currency)),
+        _kpi('Sessions started', '${totalInt('sessionsStarted')}'),
+        _kpi('Sessions completed', '${totalInt('sessionsCompleted')}'),
+        _kpi('Unique customers', '${totalInt('uniqueCustomers')}'),
+        _kpi('Revenue', formatMoney(totalInt('revenueMinor'), r.currency)),
+        _kpi('Refunds', formatMoney(totalInt('refundsMinor'), r.currency)),
+        _kpi('Discounts', formatMoney(totalInt('discountsMinor'), r.currency)),
       ],
     );
   }

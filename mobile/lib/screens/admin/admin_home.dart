@@ -109,7 +109,7 @@ class AdminHomeScreen extends StatelessWidget {
           return ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: visible.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, color: LsColors.border),
+            separatorBuilder: (_, _) => const Divider(height: 1, color: LsColors.border),
             itemBuilder: (context, i) {
               final p = visible[i];
               return ListTile(
