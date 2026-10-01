@@ -60,3 +60,9 @@ pricing rules (day type, child/adult), configurable policies.
 * **Data-subject export** and a breach-response workflow are not built. The waiver text is a *template* requiring legal review.
 * **Docker files** are provided but were not built/tested in the authoring environment (no Docker daemon).
 * **First-venue bootstrap** in production is manual (no `init-venue` CLI yet).
+* **Flutter mobile app (`mobile/`)** has sign-in and the live dashboard built and verified against the real backend
+  (real login, real authenticated photo fetches, a genuinely ticking countdown, zero console errors — see
+  `mobile/README.md`). Every other screen (check-in, customer search/profile, equipment, incidents, admin) exists in
+  the web app only, not yet ported. No `.apk` is included: building one needs Android SDK tooling the authoring
+  sandbox's network policy blocks; `mobile/README.md` gives a CI workflow that builds one automatically with no local
+  install, and the steps for a local build. iOS needs a Mac with Xcode regardless.

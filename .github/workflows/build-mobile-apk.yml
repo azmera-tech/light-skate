@@ -1,0 +1,36 @@
+name: Build Flutter APK
+
+# Builds a real, installable Android APK on every push that touches mobile/, and on request.
+# GitHub's hosted runners come with the Android SDK preinstalled, which is why this lives in CI
+# rather than being built locally: it needs no Android Studio install on anyone's machine.
+on:
+  push:
+    branches: [main, master]
+    paths: ['mobile/**', '.github/workflows/build-mobile-apk.yml']
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'Backend URL the app should talk to (e.g. https://your-venue.example.com)'
+        required: false
+        default: 'http://localhost:8090'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build apk --release --dart-define=API_BASE_URL=${{ github.event.inputs.api_base_url || 'http://localhost:8090' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: light-skate-mobile.apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30

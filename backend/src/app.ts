@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import helmet from '@fastify/helmet';
+import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
@@ -62,6 +63,23 @@ export async function buildApp(opts: { embeddedWorker?: boolean; runMigrations?:
     reply.header('Permissions-Policy', 'camera=(self), microphone=()');
     if (_req.url.startsWith('/api/')) reply.header('Cache-Control', reply.getHeader('Cache-Control') ?? 'no-store');
   });
+
+  // Same-origin by default (the web app is served from this process, so no CORS headers are needed and
+  // none are sent). Opt in with CORS_ORIGIN (comma-separated) only when a client is hosted elsewhere —
+  // a separately-deployed Flutter web build, a native app's local dev server, a staging domain, etc.
+  // Native mobile/desktop app builds (Android, iOS) are never subject to browser CORS and need none of this.
+  const allowedOrigins = config.corsOrigin.split(',').map((o) => o.trim()).filter(Boolean);
+  if (allowedOrigins.length) {
+    await app.register(cors, {
+      origin: allowedOrigins,
+      methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['content-type', 'authorization', 'idempotency-key', 'x-device-id', 'x-request-id'],
+      exposedHeaders: ['idempotent-replay'],
+      credentials: false, // auth is a bearer token, never a cookie, so credentialed CORS is unnecessary
+      maxAge: 600,
+    });
+  }
+
   await app.register(websocket, { options: { maxPayload: 4096 } });
 
   // Raw image bodies for uploads (type is verified from the bytes, never from this header).

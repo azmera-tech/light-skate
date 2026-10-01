@@ -367,3 +367,12 @@ describe('error responses', () => {
     expect(unknown.status).toBe(404);
   });
 });
+
+describe('CORS', () => {
+  it('adds no cross-origin headers by default (same-origin only, unless CORS_ORIGIN is explicitly set)', async () => {
+    const preflight = await w.app.inject({ method: 'OPTIONS', url: '/api/v1/dashboard', headers: { origin: 'https://evil.example', 'access-control-request-method': 'GET' } });
+    expect(preflight.headers['access-control-allow-origin']).toBeUndefined();
+    const real = await w.app.inject({ method: 'GET', url: '/api/v1/health', headers: { origin: 'https://evil.example' } });
+    expect(real.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});

@@ -90,6 +90,14 @@ Implement `StorageDriver` (`put/get/delete/exists`) in `backend/src/storage/` us
 `STORAGE_DRIVER`. The download endpoints already authorise every read; if you prefer presigned GET URLs from the bucket,
 issue them from `POST /photos/:id/signed-url` after the same permission check. (TODO: bundled S3 driver.)
 
+## CORS (separately-hosted web clients, Flutter web, local dev against a remote API)
+The web app in `web/` is served from the same Fastify process as the API, so it needs no CORS headers
+and none are sent by default. Set `CORS_ORIGIN` in `backend/.env` (comma-separated for several origins)
+only when a browser-based client is hosted elsewhere — a separately-deployed Flutter-web build, a
+`flutter run -d chrome` dev session, a staging domain. Example: `CORS_ORIGIN=http://localhost:8091`.
+**Native mobile and desktop app builds (Android, iOS, the real `.apk`/`.ipa`) are never subject to
+browser CORS and need this unset.** See `mobile/README.md` for the Flutter client.
+
 ## Reverse proxy notes
 Terminate TLS there; forward `X-Forwarded-For` (the app trusts the proxy for client IPs used in rate limits and audit);
 allow WebSocket upgrades on `/api/v1/realtime`; set generous idle timeouts (≥ 60 s); do not cache `/api/*`.

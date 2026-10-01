@@ -1,0 +1,116 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Thrown for any non-2xx response. Carries the server's own readable message —
+/// the backend writes messages for staff to read, not for developers, so we show it as-is.
+class ApiException implements Exception {
+  final int status;
+  final String code;
+  final String message;
+  ApiException(this.status, this.code, this.message);
+  @override
+  String toString() => message;
+}
+
+/// Thin REST client for the Light Skate API. Mirrors web/src/api.ts:
+///  - bearer token + registered device id on every request
+///  - an Idempotency-Key on every state-changing call (reused on retry, so a dropped
+///    response after a timeout can never duplicate a payment, a session start, etc.)
+///  - tracks the server clock offset so countdowns are computed from authoritative
+///    time, not the phone's own clock
+class ApiClient {
+  ApiClient._(this.baseUrl);
+
+  /// Compile-time override: flutter build web --dart-define=API_BASE_URL=https://your-venue.example.com
+  static const String _compiledBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:8090');
+
+  final String baseUrl;
+  String? _token;
+  String? _deviceId;
+  Duration _clockOffset = Duration.zero;
+  final _rng = Random.secure();
+
+  static ApiClient? _instance;
+  static Future<ApiClient> instance() async {
+    if (_instance != null) return _instance!;
+    final c = ApiClient._(_compiledBaseUrl);
+    final prefs = await SharedPreferences.getInstance();
+    c._token = prefs.getString('ls.token');
+    c._deviceId = prefs.getString('ls.device');
+    _instance = c;
+    return c;
+  }
+
+  bool get isAuthenticated => _token != null;
+
+  Future<void> setToken(String? token) async {
+    _token = token;
+    final prefs = await SharedPreferences.getInstance();
+    if (token == null) {
+      await prefs.remove('ls.token');
+    } else {
+      await prefs.setString('ls.token', token);
+    }
+  }
+
+  DateTime serverNow() => DateTime.now().add(_clockOffset);
+
+  void _syncClock(String? serverTimeIso) {
+    if (serverTimeIso == null) return;
+    final t = DateTime.tryParse(serverTimeIso);
+    if (t != null) _clockOffset = t.difference(DateTime.now());
+  }
+
+  String newIdempotencyKey() {
+    final bytes = List<int>.generate(16, (_) => _rng.nextInt(256));
+    return base64Url.encode(bytes).replaceAll('=', '');
+  }
+
+  Future<dynamic> get(String path) => _send('GET', path);
+  Future<dynamic> post(String path, [Map<String, dynamic>? body, String? idempotencyKey]) =>
+      _send('POST', path, body: body, idempotencyKey: idempotencyKey ?? newIdempotencyKey());
+
+  Future<dynamic> _send(String method, String path, {Map<String, dynamic>? body, String? idempotencyKey}) async {
+    final headers = <String, String>{'content-type': 'application/json'};
+    if (_token != null) headers['authorization'] = 'Bearer $_token';
+    if (_deviceId != null) headers['x-device-id'] = _deviceId!;
+    if (idempotencyKey != null) headers['idempotency-key'] = idempotencyKey;
+
+    final uri = Uri.parse('$baseUrl/api/v1$path');
+    http.Response res;
+    try {
+      res = method == 'GET'
+          ? await http.get(uri, headers: headers).timeout(const Duration(seconds: 20))
+          : await http.post(uri, headers: headers, body: body == null ? null : jsonEncode(body)).timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw ApiException(0, 'NETWORK', 'The server did not respond in time. Check the connection.');
+    } catch (_) {
+      throw ApiException(0, 'NETWORK', 'Cannot reach the server. Check the connection.');
+    }
+
+    Map<String, dynamic>? json;
+    if (res.body.isNotEmpty) {
+      try {
+        json = jsonDecode(res.body) as Map<String, dynamic>;
+      } catch (_) {
+        // non-JSON body; leave json null
+      }
+    }
+    if (json != null && json['serverTime'] is String) _syncClock(json['serverTime'] as String);
+
+    if (res.statusCode >= 200 && res.statusCode < 300) return json;
+    final err = (json?['error'] as Map<String, dynamic>?) ?? {};
+    throw ApiException(res.statusCode, (err['code'] as String?) ?? 'ERROR', (err['message'] as String?) ?? 'Request failed (${res.statusCode}).');
+  }
+
+  /// Fetches a protected photo's bytes with the auth header — never a public URL.
+  Future<List<int>> photoBytes(String photoId) async {
+    final headers = <String, String>{if (_token != null) 'authorization': 'Bearer $_token'};
+    final res = await http.get(Uri.parse('$baseUrl/api/v1/photos/$photoId/content'), headers: headers).timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) throw ApiException(res.statusCode, 'PHOTO', 'Photo unavailable.');
+    return res.bodyBytes;
+  }
+}
