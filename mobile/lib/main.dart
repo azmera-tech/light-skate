@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'api/api_client.dart';
 import 'screens/login_screen.dart';
-import 'screens/dashboard_screen.dart';
+import 'app_shell.dart';
 import 'theme.dart';
 
 void main() {
@@ -31,7 +31,7 @@ class _Bootstrap extends StatelessWidget {
       future: ApiClient.instance(),
       builder: (context, snap) {
         if (!snap.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        return snap.data!.isAuthenticated ? const DashboardScreen() : const LoginScreen();
+        return snap.data!.isAuthenticated ? const AppShell() : const LoginScreen();
       },
     );
   }

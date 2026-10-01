@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../theme.dart';
-import 'dashboard_screen.dart';
+import '../app_shell.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,10 +22,9 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     try {
       final api = await ApiClient.instance();
-      final res = await api.post('/auth/login', {'email': _email.text.trim(), 'password': _password.text});
-      await api.setToken(res['token'] as String);
+      await api.login(_email.text.trim(), _password.text);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const DashboardScreen()));
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const AppShell()));
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {

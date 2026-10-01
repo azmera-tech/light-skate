@@ -5,7 +5,9 @@ import '../models/dashboard.dart';
 import '../theme.dart';
 import '../widgets/session_card.dart';
 import '../widgets/status_badge.dart';
-import 'login_screen.dart';
+import 'session_detail_screen.dart';
+import 'checkin/checkin_flow.dart';
+import 'customers/customer_search_screen.dart';
 
 String _money(int? minor, String currency) {
   if (minor == null) return '—';
@@ -17,16 +19,18 @@ String _money(int? minor, String currency) {
   return '${neg ? '-' : ''}$grouped${frac == 0 ? '' : '.${frac.toString().padLeft(2, '0')}'} $currency';
 }
 
-/// The flagship screen: answers "who is skating, how many spaces are left, who is about to
-/// finish, who has expired" at a glance — the same questions the web dashboard answers,
-/// against the same backend, same permissions, same live data.
+/// The flagship screen content: answers "who is skating, how many spaces are left, who is about
+/// to finish, who has expired" at a glance — the same questions the web dashboard answers,
+/// against the same backend, same permissions, same live data. No Scaffold/AppBar of its own —
+/// it's hosted inside AppShell's "Live" tab, which owns the shared app bar and bottom nav.
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final VoidCallback? onDataChanged;
+  const DashboardScreen({super.key, this.onDataChanged});
   @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+  State<DashboardScreen> createState() => DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class DashboardScreenState extends State<DashboardScreen> {
   Dashboard? _data;
   VenueConfig? _config;
   String? _error;
@@ -42,10 +46,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _boot() async {
     _api = await ApiClient.instance();
     await _load();
-    // Polling for this first mobile build; the web client additionally holds a live WebSocket
-    // for instant cross-device updates (see api/realtime, not yet ported here — see README).
+    // Polling for this first mobile build; a live WebSocket (api/realtime_client.dart) also
+    // triggers an immediate refresh on every server event — this timer is the safety net.
     _poll = Timer.periodic(const Duration(seconds: 5), (_) => _load(silent: true));
   }
+
+  /// Called by AppShell when a realtime event arrives, so the dashboard refreshes immediately
+  /// instead of waiting for the next poll tick.
+  Future<void> refreshNow() => _load(silent: true);
 
   Future<void> _load({bool silent = false}) async {
     try {
@@ -57,17 +65,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _data = Dashboard.fromJson(dashJson as Map<String, dynamic>);
         _error = null;
       });
+      widget.onDataChanged?.call();
     } catch (e) {
       if (!mounted) return;
       if (!silent) setState(() => _error = e.toString());
     }
   }
 
-  Future<void> _signOut() async {
-    _poll?.cancel();
-    await _api.setToken(null);
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
+  Future<void> _ackAlert(String id, {required bool resolve}) async {
+    try {
+      await _api.post('/notifications/$id/ack', {'resolve': resolve});
+      await _load(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  void _openCheckIn() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CheckInFlow())).then((_) => _load(silent: true));
+  }
+
+  void _openSearch() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CustomerSearchScreen()));
+  }
+
+  void _openSession(LiveSession s) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => SessionDetailScreen(sessionId: s.id))).then((_) => _load(silent: true));
   }
 
   @override
@@ -80,18 +104,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final d = _data;
     final cfg = _config;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(cfg?.venueName ?? 'Light Skate'),
-        actions: [IconButton(onPressed: _signOut, icon: const Icon(Icons.logout), tooltip: 'Sign out')],
-      ),
-      body: d == null
-          ? (_error != null ? _ErrorView(message: _error!, onRetry: () => _load()) : const Center(child: CircularProgressIndicator()))
-          : RefreshIndicator(
-              onRefresh: () => _load(),
-              child: ListView(
-                padding: const EdgeInsets.all(14),
-                children: [
+    return d == null
+        ? (_error != null ? _ErrorView(message: _error!, onRetry: () => _load()) : const Center(child: CircularProgressIndicator()))
+        : RefreshIndicator(
+            onRefresh: () => _load(),
+            child: ListView(
+              padding: const EdgeInsets.all(14),
+              children: [
+                  Row(children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _openCheckIn,
+                        icon: const Icon(Icons.person_add_alt_1),
+                        label: const Text('New check-in'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _openSearch,
+                        icon: const Icon(Icons.search),
+                        label: const Text('Search customer'),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 14),
                   if (d.expired > 0)
                     _Banner(
                       color: LsColors.red,
@@ -127,6 +164,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   session: s,
                                   warnings: cfg!.warnings.map((w) => (minutes: w.minutes, level: w.level)).toList(),
                                   now: _api.serverNow,
+                                  onTap: () => _openSession(s),
                                 ))
                             .toList(),
                       );
@@ -139,21 +177,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 8),
                     ...d.alerts.map((a) => Card(
                           margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            leading: LsBadge(
-                              label: a.severity.toLowerCase(),
-                              level: a.severity == 'CRITICAL' ? 'red' : a.severity == 'WARNING' ? 'yellow' : 'info',
-                              icon: Icons.warning_amber_rounded,
-                            ),
-                            title: Text(a.title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                            subtitle: a.body != null ? Text(a.body!) : null,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              ListTile(
+                                leading: LsBadge(
+                                  label: a.severity.toLowerCase(),
+                                  level: a.severity == 'CRITICAL' ? 'red' : a.severity == 'WARNING' ? 'yellow' : 'info',
+                                  icon: Icons.warning_amber_rounded,
+                                ),
+                                title: Text(a.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: a.body != null ? Text(a.body!) : null,
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8, bottom: 6, right: 8),
+                                child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                                  TextButton(onPressed: () => _ackAlert(a.id, resolve: false), child: const Text('Acknowledge')),
+                                  const SizedBox(width: 4),
+                                  FilledButton.tonal(onPressed: () => _ackAlert(a.id, resolve: true), child: const Text('Resolve')),
+                                ]),
+                              ),
+                            ]),
                           ),
                         )),
                   ],
                 ],
               ),
-            ),
-    );
+            );
   }
 }
 
