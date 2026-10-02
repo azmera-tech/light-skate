@@ -142,7 +142,12 @@ class ApiClient {
     if (kDemoMode) {
       // Tiny artificial delay so loading states/spinners are visible, same as a real request.
       await Future.delayed(const Duration(milliseconds: 150));
-      final json = MockBackend.instance.handle(method, path, body) as Map<String, dynamic>?;
+      final raw = MockBackend.instance.handle(method, path, body);
+      // Round-trip through JSON: MockBackend's hand-built map literals infer as Map<String,
+      // Object> (mixed-type values), not Map<String, dynamic> — a direct cast fails at runtime
+      // under dart2js. Encoding/decoding guarantees exactly the same shape jsonDecode(real HTTP
+      // body) would produce, which is what every model's fromJson() is actually written against.
+      final json = raw == null ? null : jsonDecode(jsonEncode(raw)) as Map<String, dynamic>;
       if (json != null && json['serverTime'] is String) _syncClock(json['serverTime'] as String);
       return json;
     }
@@ -206,7 +211,8 @@ class ApiClient {
   Future<Map<String, dynamic>> postRawImage(String path, List<int> bytes, {String contentType = 'image/jpeg'}) async {
     if (kDemoMode) {
       await Future.delayed(const Duration(milliseconds: 150));
-      return (MockBackend.instance.handle('POST', path, const {}) as Map<String, dynamic>?) ?? {};
+      final raw = MockBackend.instance.handle('POST', path, const {});
+      return raw == null ? {} : jsonDecode(jsonEncode(raw)) as Map<String, dynamic>;
     }
     final headers = <String, String>{'content-type': contentType, 'idempotency-key': newIdempotencyKey()};
     if (_token != null) headers['authorization'] = 'Bearer $_token';

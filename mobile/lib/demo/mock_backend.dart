@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import '../api/api_client.dart';
 
@@ -491,8 +492,11 @@ class MockBackend {
 
     try {
       return _route(method, segs, q, body);
-    } on ApiException {
-      rethrow;
+    } on ApiException catch (e) {
+      // Same reasoning as ApiClient._send()'s JSON round-trip: a hand-built `details` map
+      // literal can infer as Map<String, Object>, which fails a later `as Map<String, dynamic>`
+      // cast at the call site. Normalize it here so every throw site doesn't have to.
+      throw ApiException(e.status, e.code, e.message, e.details == null ? null : jsonDecode(jsonEncode(e.details)));
     } catch (e) {
       throw ApiException(500, 'DEMO_ERROR', 'Demo data error: $e');
     }
