@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'api/api_client.dart';
 import 'screens/login_screen.dart';
@@ -5,7 +7,14 @@ import 'app_shell.dart';
 import 'theme.dart';
 
 void main() {
-  runApp(const LightSkateApp());
+  FlutterError.onError = (details) {
+    debugPrint('[FlutterError] ${details.exceptionAsString()}\n${details.stack}');
+  };
+  runZonedGuarded(() {
+    runApp(const LightSkateApp());
+  }, (error, stack) {
+    debugPrint('[UncaughtZoneError] $error\n$stack');
+  });
 }
 
 class LightSkateApp extends StatelessWidget {
