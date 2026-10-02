@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'api/api_client.dart';
 import 'api/realtime_client.dart';
+import 'demo/demo_mode.dart';
 import 'models/me.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/customers/customer_search_screen.dart';
@@ -62,14 +63,21 @@ class _AppShellState extends State<AppShell> {
     if (me == null) return; // _Bootstrap in main.dart only routes here when authenticated
     _me = me;
     _tabs = _allTabs.where((t) => t.visible(me)).toList();
-    _rt = RealtimeClient(
-      api: _api,
-      onEvent: () => _dashboardKey.currentState?.refreshNow(),
-      onStatus: (s) {
-        if (mounted) setState(() => _rtStatus = s);
-      },
-    );
-    _rt!.connect();
+    if (kDemoMode) {
+      // No real server to hold a WebSocket open to; the dashboard's own poll timer is the
+      // only refresh mechanism in demo mode. Show the status dot as permanently "live" rather
+      // than a misleading "offline".
+      _rtStatus = 'live';
+    } else {
+      _rt = RealtimeClient(
+        api: _api,
+        onEvent: () => _dashboardKey.currentState?.refreshNow(),
+        onStatus: (s) {
+          if (mounted) setState(() => _rtStatus = s);
+        },
+      );
+      _rt!.connect();
+    }
     if (mounted) setState(() {});
   }
 
