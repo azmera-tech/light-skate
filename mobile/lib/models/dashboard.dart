@@ -93,6 +93,9 @@ class Dashboard {
   final int equipmentOut;
   final int equipmentNeedsAttention;
   final int? openIncidents;
+  final int? shoesOnShelf;
+  final int? cleaningNeeds;
+  final int? cleaningOverdue;
   final List<Alert> alerts;
   final List<LiveSession> liveSessions;
 
@@ -101,6 +104,7 @@ class Dashboard {
     required this.available, required this.full, required this.visitorsToday, required this.revenueMinorToday,
     required this.normal, required this.expiring, required this.expired, required this.waiting,
     required this.equipmentOut, required this.equipmentNeedsAttention, required this.openIncidents,
+    required this.shoesOnShelf, required this.cleaningNeeds, required this.cleaningOverdue,
     required this.alerts, required this.liveSessions,
   });
 
@@ -109,6 +113,8 @@ class Dashboard {
     final today = j['today'] as Map<String, dynamic>;
     final rink = j['rink'] as Map<String, dynamic>;
     final eq = j['equipment'] as Map<String, dynamic>;
+    final shoes = j['shoes'] as Map<String, dynamic>?;
+    final cleaning = j['cleaning'] as Map<String, dynamic>?;
     return Dashboard(
       serverTime: DateTime.parse(j['serverTime'] as String),
       currency: j['currency'] as String,
@@ -125,6 +131,9 @@ class Dashboard {
       equipmentOut: eq['out'] as int,
       equipmentNeedsAttention: eq['needsAttention'] as int,
       openIncidents: j['openIncidents'] as int?,
+      shoesOnShelf: shoes?['onShelf'] as int?,
+      cleaningNeeds: cleaning?['needsCleaning'] as int?,
+      cleaningOverdue: cleaning?['overdue'] as int?,
       alerts: (j['alerts'] as List).map((a) => Alert.fromJson(a as Map<String, dynamic>)).toList(),
       liveSessions: (j['liveSessions'] as List).map((s) => LiveSession.fromJson(s as Map<String, dynamic>)).toList(),
     );

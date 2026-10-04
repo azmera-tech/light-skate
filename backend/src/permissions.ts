@@ -22,6 +22,8 @@ export const PERMISSIONS: Record<string, string> = {
   'equipment.return': 'Receive returned equipment',
   'equipment.maintenance': 'Report damage and manage maintenance',
   'equipment.manage': 'Add and retire equipment units',
+  'equipment.cleaning': 'Clean rental skates and manage the cleaning queue',
+  'shoeclaim.manage': "Store, search and return customers' personal shoes",
   'incident.create': 'Report incidents',
   'incident.read': 'View incident details',
   'incident.manage': 'Progress and close incidents',
@@ -53,8 +55,8 @@ export const DEFAULT_ROLES: { code: string; name: string; permissions: string[] 
       'customer.read', 'customer.create', 'customer.update', 'visit.read',
       'session.read', 'session.create', 'session.pause', 'session.extend', 'session.end', 'session.cancel',
       'session.correct', 'payment.create', 'payment.read', 'payment.discount', 'payment.refund',
-      'equipment.read', 'equipment.assign', 'equipment.return', 'equipment.maintenance',
-      'incident.create', 'incident.read', 'incident.manage',
+      'equipment.read', 'equipment.assign', 'equipment.return', 'equipment.maintenance', 'equipment.cleaning',
+      'incident.create', 'incident.read', 'incident.manage', 'shoeclaim.manage',
     ],
   },
   {
@@ -65,7 +67,7 @@ export const DEFAULT_ROLES: { code: string; name: string; permissions: string[] 
       'session.read', 'session.create', 'session.pause', 'session.extend', 'session.end', 'session.cancel',
       'payment.create', 'payment.read',
       'equipment.read', 'equipment.assign', 'equipment.return',
-      'incident.create',
+      'incident.create', 'shoeclaim.manage',
     ],
   },
   {
@@ -73,8 +75,8 @@ export const DEFAULT_ROLES: { code: string; name: string; permissions: string[] 
     name: 'Rental Staff',
     permissions: [
       'customer.read', 'visit.read', 'session.read',
-      'equipment.read', 'equipment.assign', 'equipment.return', 'equipment.maintenance',
-      'incident.create',
+      'equipment.read', 'equipment.assign', 'equipment.return', 'equipment.maintenance', 'equipment.cleaning',
+      'incident.create', 'shoeclaim.manage',
     ],
   },
 ];

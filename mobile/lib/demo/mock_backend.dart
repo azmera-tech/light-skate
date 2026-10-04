@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import '../api/api_client.dart';
 
 /// A complete, self-contained, in-memory stand-in for the real backend, used when
@@ -35,9 +36,22 @@ class MockBackend {
   late List<Map<String, dynamic>> auditLog;
   late List<Map<String, dynamic>> dayCloses;
   late List<Map<String, dynamic>> waiverVersions;
+  late List<Map<String, dynamic>> shoeClaims;
   late Map<String, dynamic> settings;
   late Map<String, dynamic> emergency;
   int maxCapacity = 60;
+
+  /// Real captured photo bytes, kept OUT of the JSON-encodable record maps above (those get
+  /// round-tripped through jsonEncode/jsonDecode in ApiClient._send, which can't carry raw
+  /// bytes) — keyed by "shoe-claims/{id}" so `demoPhotoBytes(path)` can look them up by the
+  /// same path the real backend would be asked for.
+  final Map<String, Uint8List> _photoBytes = {};
+
+  Uint8List? demoPhotoBytes(String path) {
+    final segs = Uri.parse(path).path.split('/').where((s) => s.isNotEmpty).toList();
+    if (segs.length >= 2) return _photoBytes['${segs[0]}/${segs[1]}'];
+    return null;
+  }
 
   String get _nowIso => DateTime.now().toUtc().toIso8601String();
 
@@ -93,11 +107,24 @@ class MockBackend {
                   ? 'MAINTENANCE'
                   : i == 19
                       ? 'OUT_OF_SERVICE'
-                      : 'AVAILABLE',
+                      : i == 14 || i == 15
+                          ? 'NEEDS_CLEANING'
+                          : i == 16
+                              ? 'CLEANING'
+                              : 'AVAILABLE',
           'issuedSessionId': null,
           'issuedAt': null,
           'issuedTo': null,
           'issuedUntil': null,
+          'lastCleanedAt': i.isEven ? now.subtract(Duration(hours: i)).toUtc().toIso8601String() : null,
+          'lastCleanedByName': i.isEven ? 'Demo Rental Staff (Sara)' : null,
+          'cleaningDueAt': i == 20
+              ? now.subtract(const Duration(days: 1)).toUtc().toIso8601String() // overdue scheduled deep clean
+              : i.isEven
+                  ? now.add(Duration(days: 7 - (i % 7))).toUtc().toIso8601String()
+                  : null,
+          '_returnedAt': i == 14 || i == 15 || i == 16 ? now.subtract(Duration(minutes: 5 + i)).toUtc().toIso8601String() : null,
+          '_lastCustomerName': i == 14 || i == 15 || i == 16 ? 'Demo ${names[i % names.length]}' : null,
         },
       {
         'id': 'eq-helmet-1',
@@ -111,6 +138,9 @@ class MockBackend {
         'issuedAt': null,
         'issuedTo': null,
         'issuedUntil': null,
+        'lastCleanedAt': null,
+        'lastCleanedByName': null,
+        'cleaningDueAt': null,
       },
     ];
 
@@ -148,6 +178,7 @@ class MockBackend {
       'wristbands': {'enabled': false, 'colors': <String>['BLUE', 'GREEN', 'ORANGE', 'RED']},
       'equipmentRequiredForStart': false,
       'inspectOnReturn': false,
+      'cleaning': {'afterUseRequired': true, 'deepCleanDays': 7, 'inspectionDays': 30},
       'enforceOperatingHours': false,
       'operatingHours': <String, dynamic>{},
       'weekendDays': [0, 6],
@@ -266,6 +297,28 @@ class MockBackend {
     seedSession(customer: customers[7], status: 'PAYMENT_PENDING', product: pricing[1]);
     seedSession(customer: customers[8], status: 'READY', product: pricing[0]);
 
+    // Personal shoe claims for a few of the live sessions above, so "Shoes on Shelf" and the
+    // expiry-alert's shoe section are populated immediately. Claim numbers follow the real
+    // LS-#### format (see genClaimNumber in the backend) so the demo matches production exactly.
+    shoeClaims = [];
+    int claimSeq = 4827;
+    void seedClaim(Map<String, dynamic> session, {String status = 'STORED'}) {
+      shoeClaims.add({
+        'id': _id('shoeclaim'),
+        'claimNumber': 'LS-${(claimSeq++).toString().padLeft(4, '0')}',
+        'customerId': session['customerId'],
+        'customerName': session['customerName'],
+        'visitId': session['visitId'],
+        'sessionId': session['id'],
+        'status': status,
+        'createdAt': session['startedAt'] ?? _nowIso,
+        'returnedAt': status == 'RETURNED' ? _nowIso : null,
+      });
+    }
+    seedClaim(sessions[0]); // normal, active session
+    seedClaim(sessions[3]); // already EXPIRED — demonstrates "return pending" on the shelf list
+    seedClaim(sessions[6]); // also EXPIRED — the full-screen expiry alert will queue both
+
     // a couple of seeded payments so today's revenue looks real
     for (final s in sessions.where((s) => (s['paidMinor'] as int) > 0)) {
       payments.add({
@@ -290,6 +343,7 @@ class MockBackend {
     // one completed visit earlier today, for History
     seedSession(customer: customers[9], status: 'COMPLETED', product: pricing[1], elapsed: const Duration(hours: 3));
     sessions.last['actualEndAt'] = now.subtract(const Duration(hours: 2)).toUtc().toIso8601String();
+    seedClaim(sessions.last, status: 'RETURNED'); // already handed back — shows the closed state in the claims list
     payments.add({
       'id': _id('pay'),
       'sessionId': sessions.last['id'],
@@ -419,9 +473,16 @@ class MockBackend {
     return events;
   }
 
+  Map<String, dynamic>? _activeShoeClaimForSession(String sessionId) =>
+      shoeClaims.cast<Map<String, dynamic>?>().firstWhere((c) => c!['sessionId'] == sessionId && c['status'] != 'RETURNED', orElse: () => null);
+
   Map<String, dynamic> _sessionDetailJson(Map<String, dynamic> s) => {
         'serverTime': _nowIso,
-        'session': _sessionRowJson(s),
+        'session': {
+          ..._sessionRowJson(s),
+          'shoeClaimId': _activeShoeClaimForSession(s['id'] as String)?['id'],
+          'shoeClaimNumber': _activeShoeClaimForSession(s['id'] as String)?['claimNumber'],
+        },
         'events': _sessionEvents(s),
         'extensions': (s['extensionLog'] as List<Map<String, dynamic>>? ?? const [])
             .map((e) => {'addedSeconds': e['addedSeconds'], 'newEndAt': e['newEndAt'], 'priceMinor': e['priceMinor'], 'reason': e['reason']})
@@ -484,14 +545,14 @@ class MockBackend {
 
   /// Mirrors `ApiClient._send`'s contract: returns the decoded JSON body (Map, usually) on
   /// success, or throws `ApiException` on a simulated error.
-  dynamic handle(String method, String pathAndQuery, Map<String, dynamic>? body) {
+  dynamic handle(String method, String pathAndQuery, Map<String, dynamic>? body, {Uint8List? bytes}) {
     final uri = Uri.parse(pathAndQuery);
     final segs = uri.path.split('/').where((s) => s.isNotEmpty).toList();
     final q = uri.queryParameters;
     body ??= const {};
 
     try {
-      return _route(method, segs, q, body);
+      return _route(method, segs, q, body, bytes: bytes);
     } on ApiException catch (e) {
       // Same reasoning as ApiClient._send()'s JSON round-trip: a hand-built `details` map
       // literal can infer as Map<String, Object>, which fails a later `as Map<String, dynamic>`
@@ -502,7 +563,7 @@ class MockBackend {
     }
   }
 
-  dynamic _route(String method, List<String> segs, Map<String, String> q, Map<String, dynamic> body) {
+  dynamic _route(String method, List<String> segs, Map<String, String> q, Map<String, dynamic> body, {Uint8List? bytes}) {
     if (segs.isEmpty) return {'serverTime': _nowIso};
 
     switch (segs[0]) {
@@ -550,13 +611,16 @@ class MockBackend {
         return _payments(method, segs, body);
 
       case 'equipment':
-        return _equipment(method, segs, body);
+        return _equipment(method, segs, q, body);
 
       case 'incidents':
         return _incidents(method, segs, q, body);
 
       case 'incident-attachments':
         return {'ok': true};
+
+      case 'shoe-claims':
+        return _shoeClaims(method, segs, q, body, bytes: bytes);
 
       case 'photos':
         throw ApiException(404, 'NOT_FOUND', 'No photo in demo mode.');
@@ -1034,7 +1098,9 @@ class MockBackend {
 
   // ---- equipment ------------------------------------------------------------------------------
 
-  dynamic _equipment(String method, List<String> segs, Map<String, dynamic> body) {
+  dynamic _equipment(String method, List<String> segs, Map<String, String> q, Map<String, dynamic> body) {
+    if (segs.length == 2 && segs[1] == 'cleaning-queue') return _cleaningQueue();
+    if (segs.length == 2 && segs[1] == 'health') return _equipmentHealth();
     if (segs.length == 1) {
       if (method == 'POST') {
         final item = {
@@ -1123,8 +1189,94 @@ class MockBackend {
       case 'out-of-service':
         e['status'] = 'OUT_OF_SERVICE';
         return {'equipmentId': id, 'status': 'OUT_OF_SERVICE'};
+      case 'cleaning':
+        if (segs.length >= 4 && segs[3] == 'start') {
+          e['status'] = 'CLEANING';
+          return {'equipmentId': id, 'status': 'CLEANING'};
+        }
+        if (segs.length >= 4 && segs[3] == 'complete') {
+          final checklist = (body['checklist'] as Map?)?.cast<String, dynamic>() ?? {};
+          final missing = cleaningChecklistKeys.where((k) => checklist[k] != true).toList();
+          if (missing.isNotEmpty) throw ApiException(422, 'CHECKLIST_INCOMPLETE', 'Every checklist item must be checked off before completing cleaning.', {'missing': missing});
+          e['status'] = 'AVAILABLE';
+          e['lastCleanedAt'] = _nowIso;
+          e['lastCleanedByName'] = 'Demo Rental Staff (Sara)';
+          e['cleaningDueAt'] = DateTime.now().add(Duration(days: (settings['cleaning'] as Map)['deepCleanDays'] as int)).toUtc().toIso8601String();
+          return {'equipmentId': id, 'status': 'AVAILABLE', 'lastCleanedAt': e['lastCleanedAt'], 'cleaningDueAt': e['cleaningDueAt']};
+        }
+        if (segs.length >= 4 && segs[3] == 'issue') {
+          e['status'] = 'MAINTENANCE';
+          (e['maintenance'] ??= <Map<String, dynamic>>[]) as List<Map<String, dynamic>>;
+          (e['maintenance'] as List<Map<String, dynamic>>).add({'id': _id('maint'), 'issue': body['issue'], 'status': 'IN_PROGRESS', 'reportedAt': _nowIso, 'startedAt': _nowIso, 'completedAt': null, 'resolution': null, 'hasPhoto': false});
+          return {'equipmentId': id, 'status': 'MAINTENANCE'};
+        }
+        break;
     }
     throw ApiException(404, 'NOT_FOUND', 'No demo handler for equipment/$id/${segs.skip(2).join('/')}');
+  }
+
+  static const cleaningChecklistKeys = ['interior', 'exterior', 'wheels', 'laces', 'noDamage'];
+
+  Map<String, dynamic> _cleaningQueue() {
+    final needsCleaning = equipment.where((e) => e['status'] == 'NEEDS_CLEANING').map(_cleaningItemJson).toList();
+    final cleaning = equipment.where((e) => e['status'] == 'CLEANING').map(_cleaningItemJson).toList();
+    final completed = equipment.where((e) => e['lastCleanedAt'] != null).toList()
+      ..sort((a, b) => (b['lastCleanedAt'] as String).compareTo(a['lastCleanedAt'] as String));
+    final now = DateTime.now();
+    final overdueScheduled = equipment.where((e) {
+      final due = e['cleaningDueAt'] as String?;
+      return e['status'] != 'OUT_OF_SERVICE' && due != null && DateTime.parse(due).isBefore(now);
+    }).map(_cleaningItemJson).toList();
+    return {
+      'needsCleaning': needsCleaning,
+      'cleaning': cleaning,
+      'completed': completed.take(50).map(_cleaningItemJson).toList(),
+      'overdueScheduled': overdueScheduled,
+      'rules': settings['cleaning'],
+    };
+  }
+
+  Map<String, dynamic> _cleaningItemJson(Map<String, dynamic> e) => {
+        'id': e['id'],
+        'code': e['code'],
+        'size': e['size'],
+        'status': e['status'],
+        'returnedAt': e['_returnedAt'],
+        'lastCustomerName': e['_lastCustomerName'],
+        'lastCleanedAt': e['lastCleanedAt'],
+        'lastCleanedByName': e['lastCleanedByName'],
+        'cleaningDueAt': e['cleaningDueAt'],
+      };
+
+  Map<String, dynamic> _equipmentHealth() {
+    int count(bool Function(Map<String, dynamic>) f) => equipment.where(f).length;
+    final now = DateTime.now();
+    final total = equipment.length;
+    final needsCleaning = count((e) => e['status'] == 'NEEDS_CLEANING');
+    final cleaning = count((e) => e['status'] == 'CLEANING');
+    final overdue = count((e) {
+      final due = e['cleaningDueAt'] as String?;
+      return e['status'] != 'OUT_OF_SERVICE' && due != null && DateTime.parse(due).isBefore(now);
+    });
+    final cleanedToday = count((e) {
+      final at = e['lastCleanedAt'] as String?;
+      return at != null && _fmtDate(DateTime.parse(at)) == _fmtDate(now);
+    });
+    final pendingCleaning = needsCleaning + cleaning;
+    final compliance = total > 0 ? (((total - overdue - needsCleaning) / total) * 100).round() : 100;
+    return {
+      'total': total,
+      'available': count((e) => e['status'] == 'AVAILABLE'),
+      'inUse': count((e) => e['status'] == 'ISSUED' || e['status'] == 'IN_USE'),
+      'needsCleaning': needsCleaning,
+      'cleaning': cleaning,
+      'maintenance': count((e) => e['status'] == 'DAMAGED' || e['status'] == 'MAINTENANCE'),
+      'outOfService': count((e) => e['status'] == 'OUT_OF_SERVICE'),
+      'overdue': overdue,
+      'cleanedToday': cleanedToday,
+      'pendingCleaning': pendingCleaning,
+      'cleaningCompliancePct': compliance,
+    };
   }
 
   // ---- incidents ------------------------------------------------------------------------------
@@ -1184,6 +1336,106 @@ class MockBackend {
     throw ApiException(404, 'NOT_FOUND', 'No demo handler for incidents/$id/${segs.skip(2).join('/')}');
   }
 
+  // ---- personal shoe claims --------------------------------------------------------------------
+
+  Map<String, dynamic>? _findShoeClaim(String id) => shoeClaims.cast<Map<String, dynamic>?>().firstWhere((c) => c!['id'] == id, orElse: () => null);
+
+  Map<String, dynamic> _shoeClaimJson(Map<String, dynamic> c) {
+    final session = c['sessionId'] == null ? null : _findSession(c['sessionId'] as String);
+    final cust = _findCustomer(c['customerId'] as String);
+    return {
+      ...c,
+      'customerPhotoId': cust?['photoId'],
+      'sessionStatus': session == null ? null : _liveStatusFor(session),
+      'equipment': session == null ? '' : _equipmentCodesFor(session['id'] as String),
+    };
+  }
+
+  dynamic _shoeClaims(String method, List<String> segs, Map<String, String> q, Map<String, dynamic> body, {Uint8List? bytes}) {
+    if (segs.length == 1 && method == 'POST') {
+      final customerId = q['customerId'];
+      final visitId = q['visitId'];
+      final sessionId = q['sessionId'];
+      if (customerId == null || visitId == null) throw ApiException(400, 'VALIDATION_FAILED', 'customerId and visitId are required.');
+      final cust = _findCustomer(customerId);
+      if (cust == null) throw ApiException(404, 'NOT_FOUND', 'Customer not found.');
+      // Active-claim-number collision check, same rule as the backend's genClaimNumber().
+      String claimNumber;
+      do {
+        claimNumber = 'LS-${(1000 + _rng.nextInt(9000)).toString()}';
+      } while (shoeClaims.any((c) => c['claimNumber'] == claimNumber && c['status'] != 'RETURNED'));
+      final id = _id('shoeclaim');
+      final rec = {
+        'id': id,
+        'claimNumber': claimNumber,
+        'customerId': customerId,
+        'customerName': cust['fullName'],
+        'visitId': visitId,
+        'sessionId': sessionId,
+        'status': 'STORED',
+        'createdAt': _nowIso,
+        'returnedAt': null,
+      };
+      shoeClaims.add(rec);
+      if (bytes != null) _photoBytes['shoe-claims/$id'] = bytes;
+      return _shoeClaimJson(rec);
+    }
+    if (segs.length == 1) {
+      final active = q['active'] != 'false';
+      final rows = shoeClaims.where((c) => !active || c['status'] != 'RETURNED').map(_shoeClaimJson).toList()
+        ..sort((a, b) => (b['createdAt'] as String).compareTo(a['createdAt'] as String));
+      return {'items': rows, 'onShelf': shoeClaims.where((c) => c['status'] != 'RETURNED').length};
+    }
+    if (segs.length == 2 && segs[1] == 'search') {
+      final number = q['number']?.trim().toUpperCase().replaceFirst(RegExp(r'^LS-?'), 'LS-');
+      final c = shoeClaims.cast<Map<String, dynamic>?>().firstWhere((c) => c!['claimNumber'] == number, orElse: () => null);
+      if (c == null) throw ApiException(404, 'NOT_FOUND', 'Shoe claim not found.');
+      return {'claim': _shoeClaimJson(c)};
+    }
+    final id = segs[1];
+    final c = _findShoeClaim(id);
+    if (c == null) throw ApiException(404, 'NOT_FOUND', 'Shoe claim not found.');
+    if (segs.length == 2) return {'claim': _shoeClaimJson(c)};
+    final action = segs[2];
+    if (action == 'return') {
+      if (c['status'] == 'RETURNED') throw ApiException(409, 'ALREADY_RETURNED', 'These shoes were already returned.');
+      if (c['status'] == 'MISSING') throw ApiException(409, 'CLAIM_MISSING', 'This claim is marked missing. Resolve the incident first.');
+      c['status'] = 'RETURNED';
+      c['returnedAt'] = _nowIso;
+      return _shoeClaimJson(c);
+    }
+    if (action == 'report') {
+      final type = body['type'] as String? ?? 'OTHER';
+      final n = incidents.length + 1;
+      final incidentNumber = 'INC-${_dateStr(DateTime.now())}-${n.toString().padLeft(3, '0')}';
+      final incRec = {
+        'id': _id('inc'),
+        'incidentNumber': incidentNumber,
+        'customerId': c['customerId'],
+        'customerName': c['customerName'],
+        'sessionId': c['sessionId'],
+        'occurredAt': _nowIso,
+        'incidentType': type,
+        'severity': type == 'SHOE_MISSING' ? 'SERIOUS' : 'MODERATE',
+        'status': 'REPORTED',
+        'location': 'Shoe shelf',
+        'description': body['description'],
+        'actionTaken': null,
+        'reportedByName': 'Demo Front Desk (Dawit)',
+        'managerNotified': false,
+        'shoeClaimId': id,
+      };
+      incidents.add(incRec);
+      c['status'] = type == 'SHOE_MISSING' ? 'MISSING' : 'DISPUTED';
+      return {'claimId': id, 'status': c['status'], 'incidentId': incRec['id'], 'incidentNumber': incidentNumber};
+    }
+    if (action == 'link-session') {
+      if (c['sessionId'] == null) c['sessionId'] = body['sessionId'];
+      return {'ok': true};
+    }
+    throw ApiException(404, 'NOT_FOUND', 'No demo handler for shoe-claims/$id/$action');
+  }
+
   // ---- dashboard ------------------------------------------------------------------------------
 
   Map<String, dynamic> _dashboard() {
@@ -1205,6 +1457,13 @@ class MockBackend {
     }
     final equipmentOut = equipment.where((e) => e['status'] == 'ISSUED').length;
     final equipmentNeedsAttention = equipment.where((e) => ['DAMAGED', 'MAINTENANCE'].contains(e['status'])).length;
+    final shoesOnShelf = shoeClaims.where((c) => c['status'] != 'RETURNED').length;
+    final needsCleaningCount = equipment.where((e) => e['status'] == 'NEEDS_CLEANING').length;
+    final nowTime = DateTime.now();
+    final overdueCount = equipment.where((e) {
+      final due = e['cleaningDueAt'] as String?;
+      return e['status'] != 'OUT_OF_SERVICE' && due != null && DateTime.parse(due).isBefore(nowTime);
+    }).length;
     return {
       'serverTime': _nowIso,
       'localDate': today,
@@ -1217,6 +1476,8 @@ class MockBackend {
       'awaitingPayment': sessions.where((s) => s['status'] == 'PAYMENT_PENDING').length,
       'equipment': {'out': equipmentOut, 'needsAttention': equipmentNeedsAttention},
       'openIncidents': incidents.where((i) => i['status'] != 'CLOSED').length,
+      'shoes': {'onShelf': shoesOnShelf},
+      'cleaning': {'needsCleaning': needsCleaningCount, 'overdue': overdueCount},
       'alerts': expired > 0
           ? [
               {'id': 'alert-expired', 'type': 'SESSION_EXPIRED', 'severity': 'WARNING', 'title': '$expired session(s) have run out of time', 'body': null, 'entityType': 'session', 'entityId': null, 'createdAt': _nowIso},
@@ -1408,8 +1669,8 @@ class MockBackend {
     'waiver.manage', 'visit.read',
     'session.read', 'session.create', 'session.pause', 'session.extend', 'session.end', 'session.cancel', 'session.correct', 'session.override_capacity',
     'payment.create', 'payment.read', 'payment.discount', 'payment.refund',
-    'equipment.read', 'equipment.assign', 'equipment.return', 'equipment.maintenance', 'equipment.manage',
-    'incident.create', 'incident.read', 'incident.manage',
+    'equipment.read', 'equipment.assign', 'equipment.return', 'equipment.maintenance', 'equipment.manage', 'equipment.cleaning',
+    'incident.create', 'incident.read', 'incident.manage', 'shoeclaim.manage',
     'reports.read', 'staff.manage', 'settings.manage', 'pricing.manage', 'capacity.manage',
     'audit.read', 'device.manage', 'dayclose.manage',
   ];

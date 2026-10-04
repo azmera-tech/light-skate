@@ -23,6 +23,8 @@ const FLOW: Record<IncidentStatus, IncidentStatus[]> = {
 export interface CreateIncidentInput {
   customerId?: string | null; sessionId?: string | null; occurredAt?: Date | null; location?: string | null;
   incidentType: string; severity: 'MINOR' | 'MODERATE' | 'SERIOUS' | 'CRITICAL'; description: string; actionTaken?: string | null; managerNotified?: boolean;
+  /** Links a "report mismatch / missing shoes" incident back to its personal-shoe claim. */
+  shoeClaimId?: string | null;
 }
 
 export async function createIncident(ctx: Ctx, i: CreateIncidentInput) {
@@ -44,10 +46,10 @@ export async function createIncident(ctx: Ctx, i: CreateIncidentInput) {
   const number = `INC-${date.replace(/-/g, '')}-${String(n).padStart(3, '0')}`;
   const r = await ctx.db.query(
     `INSERT INTO incidents (venue_id, incident_number, customer_id, visit_id, session_id, occurred_at, location, incident_type, severity, description, action_taken,
-        manager_notified, reported_by, device_id, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15) RETURNING *`,
+        manager_notified, reported_by, device_id, created_at, updated_at, shoe_claim_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16) RETURNING *`,
     [ctx.venueId, number, customerId, visitId, sessionId, occurred, i.location ?? null, i.incidentType, i.severity, i.description.trim(), i.actionTaken?.trim() ?? null,
-      !!i.managerNotified, ctx.user?.id ?? null, ctx.deviceId, ctx.now]);
+      !!i.managerNotified, ctx.user?.id ?? null, ctx.deviceId, ctx.now, i.shoeClaimId ?? null]);
   const inc = r.rows[0];
   await recordIncidentEvent(ctx, inc.id, 'INCIDENT_REPORTED', { to: 'REPORTED', meta: { severity: i.severity, type: i.incidentType } });
   await audit(ctx, { action: 'incident.created', entityType: 'incident', entityId: inc.id, after: { incidentNumber: number, severity: i.severity, type: i.incidentType, customerId } });

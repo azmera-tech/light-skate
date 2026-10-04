@@ -87,6 +87,7 @@ describe('offline command replay', () => {
       { requestId: randomUUID(), command: 'RETURN_EQUIPMENT', equipmentId: skate, params: { condition: 'GOOD' } },
     ]);
     expect(res.body.results.map((x: any) => x.outcome)).toEqual(['ACCEPTED', 'ACCEPTED', 'ACCEPTED', 'ACCEPTED']);
-    expect((await pool.query('SELECT status FROM equipment WHERE id=$1', [skate])).rows[0].status).toBe('AVAILABLE');
+    // Standard rule: a returned rental skate needs cleaning before it can go out again.
+    expect((await pool.query('SELECT status FROM equipment WHERE id=$1', [skate])).rows[0].status).toBe('NEEDS_CLEANING');
   });
 });

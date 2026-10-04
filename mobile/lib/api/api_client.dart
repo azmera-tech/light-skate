@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../demo/demo_mode.dart';
@@ -206,12 +207,28 @@ class ApiClient {
     return res.bodyBytes;
   }
 
+  /// Generic authenticated image fetch, for endpoints that serve a photo directly by path
+  /// (e.g. a shoe claim's photo) rather than through the shared /photos/:id/content table.
+  /// In demo mode this returns whatever bytes MockBackend actually stored for that path — the
+  /// real camera/gallery photo the staff member just captured, not a placeholder.
+  Future<List<int>> getBytes(String path) async {
+    if (kDemoMode) {
+      final bytes = MockBackend.instance.demoPhotoBytes(path);
+      if (bytes == null) throw ApiException(404, 'NOT_FOUND', 'No photo in demo mode.');
+      return bytes;
+    }
+    final headers = <String, String>{if (_token != null) 'authorization': 'Bearer $_token'};
+    final res = await http.get(Uri.parse('$baseUrl/api/v1$path'), headers: headers).timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) throw ApiException(res.statusCode, 'PHOTO', 'Photo unavailable.');
+    return res.bodyBytes;
+  }
+
   /// Uploads raw image bytes (not JSON/multipart — the backend reads the request body directly
-  /// as the file). Used for customer photos, equipment maintenance photos, incident attachments.
+  /// as the file). Used for customer photos, equipment maintenance photos, shoe claim photos.
   Future<Map<String, dynamic>> postRawImage(String path, List<int> bytes, {String contentType = 'image/jpeg'}) async {
     if (kDemoMode) {
       await Future.delayed(const Duration(milliseconds: 150));
-      final raw = MockBackend.instance.handle('POST', path, const {});
+      final raw = MockBackend.instance.handle('POST', path, const {}, bytes: Uint8List.fromList(bytes));
       return raw == null ? {} : jsonDecode(jsonEncode(raw)) as Map<String, dynamic>;
     }
     final headers = <String, String>{'content-type': contentType, 'idempotency-key': newIdempotencyKey()};

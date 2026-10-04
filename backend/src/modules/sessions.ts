@@ -418,9 +418,14 @@ export async function getSession(ctx: Ctx, id: string) {
   const pauses = await many<any>(ctx.db, 'SELECT id, paused_at, resumed_at, duration_seconds, counted_toward_time, reason FROM session_pauses WHERE session_id=$1 ORDER BY paused_at', [id]);
   const equipment = await many<any>(ctx.db, `SELECT e.id, e.code, ea.assigned_at, ea.returned_at FROM equipment_assignments ea JOIN equipment e ON e.id=ea.equipment_id WHERE ea.session_id=$1 ORDER BY ea.assigned_at`, [id]);
   const { paid, pending } = await sessionNetPaid(ctx.db, id);
+  // Lets a full-screen expiry alert show the customer's stored shoes without a second lookup.
+  const shoeClaim = await one<any>(ctx.db, `SELECT id, claim_number, status FROM shoe_claims WHERE session_id=$1 AND status <> 'RETURNED' ORDER BY created_at DESC LIMIT 1`, [id]);
   return {
     serverTime: ctx.now.toISOString(),
-    session: { ...toCamel(r), remainingSeconds: remainingSeconds(r, ctx.now), paidMinor: paid, pendingMinor: pending, dueMinor: r.price_minor - r.discount_minor },
+    session: {
+      ...toCamel(r), remainingSeconds: remainingSeconds(r, ctx.now), paidMinor: paid, pendingMinor: pending, dueMinor: r.price_minor - r.discount_minor,
+      shoeClaimId: shoeClaim?.id ?? null, shoeClaimNumber: shoeClaim?.claim_number ?? null,
+    },
     events: toCamelAll(events), extensions: toCamelAll(extensions), pauses: toCamelAll(pauses), equipmentAssignments: toCamelAll(equipment),
   };
 }

@@ -10,6 +10,7 @@ import 'staff_screen.dart';
 import 'devices_screen.dart';
 import 'audit_screen.dart';
 import 'close_day_screen.dart';
+import 'equipment_health_screen.dart';
 
 class _AdminPage {
   final String title;
@@ -53,6 +54,13 @@ class AdminHomeScreen extends StatelessWidget {
       icon: Icons.settings_outlined,
       visible: (me) => me.canAny(const ['settings.manage', 'capacity.manage']),
       builder: (_) => const SettingsScreen(),
+    ),
+    _AdminPage(
+      title: 'Equipment Health',
+      subtitle: 'Fleet status & cleaning compliance',
+      icon: Icons.health_and_safety_outlined,
+      visible: (me) => me.canAny(const ['equipment.manage', 'equipment.cleaning', 'equipment.maintenance']),
+      builder: (_) => const EquipmentHealthScreen(),
     ),
     _AdminPage(
       title: 'Pricing',

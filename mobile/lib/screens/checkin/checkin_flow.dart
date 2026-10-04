@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -14,18 +15,19 @@ import '../../widgets/camera_capture.dart';
 import '../../widgets/signature_pad.dart';
 import '../../widgets/status_badge.dart';
 
-enum _Step { customer, details, photo, waiver, session, payment, start }
+enum _Step { customer, details, photo, shoes, waiver, session, payment, start }
 
 const _stepLabels = <_Step, String>{
   _Step.customer: 'Customer',
   _Step.details: 'Customer',
   _Step.photo: 'Photo',
+  _Step.shoes: 'Shoes',
   _Step.waiver: 'Waiver',
   _Step.session: 'Session',
   _Step.payment: 'Payment',
   _Step.start: 'Start',
 };
-const _progressSteps = [_Step.customer, _Step.photo, _Step.waiver, _Step.session, _Step.payment, _Step.start];
+const _progressSteps = [_Step.customer, _Step.photo, _Step.shoes, _Step.waiver, _Step.session, _Step.payment, _Step.start];
 
 /// The full check-in wizard: customer (search/register) -> photo -> waiver -> session (package
 /// choice) -> payment -> start (equipment + confirm). Matches the web app's step wizard exactly
@@ -60,6 +62,11 @@ class _CheckInFlowState extends State<CheckInFlow> {
 
   // photo
   Uint8List? _capturedPhoto;
+
+  // personal shoes
+  Uint8List? _shoeBytes;
+  String? _shoeClaimId;
+  String? _shoeClaimNumber;
 
   // waiver
   CurrentWaiver? _waiver;
@@ -139,6 +146,10 @@ class _CheckInFlowState extends State<CheckInFlow> {
   }
 
   Future<void> _afterPhotoResolved() async {
+    setState(() => _step = _Step.shoes);
+  }
+
+  Future<void> _afterShoesResolved() async {
     if (_profile!.waiver.accepted) {
       setState(() => _step = _Step.session);
       return;
@@ -338,6 +349,85 @@ class _CheckInFlowState extends State<CheckInFlow> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  // ---- step 3b: personal shoes --------------------------------------------------------------
+
+  Widget _buildShoesStep() {
+    return _StepScaffold(
+      title: 'Store personal shoes',
+      subtitle: 'Photograph both shoes together, then place them on the shelf. A short claim '
+          'number is generated so they can be found again later — keep it until the shoes are returned.',
+      busy: _busy,
+      error: _error,
+      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        PhotoPreviewTile(bytes: _shoeBytes, onTap: _pickShoePhoto),
+      ]),
+      actions: [
+        TextButton(onPressed: _busy ? null : () => _finishShoesStep(skip: true), child: const Text('No shoes to store')),
+        FilledButton.icon(
+          onPressed: _busy || _shoeBytes == null ? null : () => _finishShoesStep(skip: false),
+          icon: const Icon(Icons.checkroom_outlined),
+          label: const Text('Store Personal Shoes'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickShoePhoto() async {
+    final bytes = await captureCustomerPhoto(context, title: "Photo of customer's shoes");
+    if (bytes != null) setState(() => _shoeBytes = bytes);
+  }
+
+  Future<void> _finishShoesStep({required bool skip}) async {
+    if (skip) {
+      await _afterShoesResolved();
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final res = await _api.postRawImage('/shoe-claims?customerId=$_customerId&visitId=$_visitId', _shoeBytes!);
+      _shoeClaimId = res['id'] as String?;
+      _shoeClaimNumber = res['claimNumber'] as String?;
+      if (!mounted) return;
+      await _showShoeClaimConfirmation();
+      await _afterShoesResolved();
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _showShoeClaimConfirmation() {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Personal Shoes Stored'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.memory(_shoeBytes!, height: 120, fit: BoxFit.cover)),
+          const SizedBox(height: 16),
+          const Text('CLAIM NUMBER', style: TextStyle(color: LsColors.muted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+          const SizedBox(height: 4),
+          Text('#${_shoeClaimNumber ?? ''}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: LsColors.brand)),
+          const SizedBox(height: 10),
+          Text(_profile!.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: LsColors.yellowSoft, borderRadius: BorderRadius.circular(8)),
+            child: const Text('Keep this claim number until your shoes are returned.', textAlign: TextAlign.center, style: TextStyle(color: LsColors.yellow)),
+          ),
+        ]),
+        actions: [
+          FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+        ],
+      ),
+    );
   }
 
   // ---- step 4: waiver -----------------------------------------------------------------------
@@ -541,6 +631,12 @@ class _CheckInFlowState extends State<CheckInFlow> {
       };
       final res = await _api.post('/sessions', body) as Map<String, dynamic>;
       _sessionId = res['id'] as String;
+      if (_shoeClaimId != null) {
+        // Best-effort link: the shoe photo is usually taken before the session exists, so the
+        // claim is backfilled with the session id once it's created. Not fatal if it fails —
+        // the claim is still fully usable by its claim number alone.
+        unawaited(_api.post('/shoe-claims/$_shoeClaimId/link-session', {'sessionId': _sessionId}).catchError((_) => null));
+      }
       await _refreshSession();
       if (_session!.status == 'READY') {
         await _loadEquipment();
@@ -852,6 +948,9 @@ class _CheckInFlowState extends State<CheckInFlow> {
         break;
       case _Step.photo:
         body = _buildPhotoStep();
+        break;
+      case _Step.shoes:
+        body = _buildShoesStep();
         break;
       case _Step.waiver:
         body = _buildWaiverStep();

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'alarm/expiry_alarm_service.dart';
+import 'alarm/expiry_coordinator.dart';
+import 'alarm/expiry_queue.dart';
 import 'api/api_client.dart';
 import 'api/realtime_client.dart';
 import 'demo/demo_mode.dart';
@@ -10,6 +13,7 @@ import 'screens/incidents/incidents_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/admin/admin_home.dart';
 import 'screens/checkin/checkin_flow.dart';
+import 'screens/expiry_alert_screen.dart';
 import 'screens/login_screen.dart';
 import 'widgets/emergency_dialog.dart';
 import 'theme.dart';
@@ -42,7 +46,7 @@ final _allTabs = <_NavTab>[
   _NavTab('Incidents', Icons.report_problem_outlined, (_) => const IncidentsScreen(), (me) => me.canAny(['incident.create', 'incident.read'])),
 ];
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   late ApiClient _api;
   Me? _me;
   int _index = 0;
@@ -54,6 +58,8 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    expiryQueue.addListener(_onExpiryQueueChanged);
     _boot();
   }
 
@@ -78,11 +84,41 @@ class _AppShellState extends State<AppShell> {
       );
       _rt!.connect();
     }
+    // The native half of the session-expiry alarm: fires even with the app backgrounded or the
+    // screen locked (see lib/alarm/expiry_alarm_service.dart). Independent of demo mode — it's
+    // pure on-device scheduling, nothing to do with where session data comes from.
+    await ExpiryAlarmService.instance.init(onNotificationTapped: (sessionId) async {
+      await ExpiryCoordinator.instance.surfaceById(sessionId, _api);
+    });
     if (mounted) setState(() {});
+  }
+
+  void _onExpiryQueueChanged() {
+    if (!mounted) return;
+    setState(() {}); // keeps the app-bar "N expired" chip in sync
+    if (!expiryQueue.isEmpty && !expiryQueue.isShowing) _showExpiryAlert();
+  }
+
+  void _showExpiryAlert() {
+    if (expiryQueue.isEmpty || expiryQueue.isShowing) return;
+    expiryQueue.isShowing = true;
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ExpiryAlertScreen(), fullscreenDialog: true)).then((_) {
+      expiryQueue.isShowing = false;
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Reconcile against the server the moment the app comes back to the foreground — a session
+    // can have expired (or been extended) while backgrounded, and polling itself is paused
+    // while backgrounded, so this is the catch-up point rather than a bare timer.
+    if (state == AppLifecycleState.resumed) _dashboardKey.currentState?.refreshNow();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    expiryQueue.removeListener(_onExpiryQueueChanged);
     _rt?.dispose();
     super.dispose();
   }
@@ -127,6 +163,16 @@ class _AppShellState extends State<AppShell> {
       appBar: AppBar(
         title: const Text('Light Skate'),
         actions: [
+          if (!expiryQueue.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: ActionChip(
+                avatar: const Icon(Icons.error, color: Colors.white, size: 16),
+                label: Text('${expiryQueue.length} Expired', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+                backgroundColor: LsColors.red,
+                onPressed: _showExpiryAlert,
+              ),
+            ),
           Tooltip(
             message: switch (_rtStatus) { 'live' => 'Live updates connected', 'connecting' => 'Connecting…', _ => 'Offline — showing last known data' },
             child: Padding(

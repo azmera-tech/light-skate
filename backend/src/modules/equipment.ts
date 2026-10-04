@@ -11,17 +11,20 @@ import { completeVisitIfDone } from './visits.js';
 import { newStorageKey, storage } from '../storage/index.js';
 import { validateImage } from '../storage/image.js';
 
-export type EquipmentStatus = 'AVAILABLE' | 'RESERVED' | 'ISSUED' | 'IN_USE' | 'RETURNED' | 'DAMAGED' | 'MAINTENANCE' | 'OUT_OF_SERVICE';
+export type EquipmentStatus = 'AVAILABLE' | 'RESERVED' | 'ISSUED' | 'IN_USE' | 'RETURNED' | 'DAMAGED' | 'MAINTENANCE' | 'OUT_OF_SERVICE' | 'NEEDS_CLEANING' | 'CLEANING';
 
 const EQ_TRANSITIONS: Record<EquipmentStatus, EquipmentStatus[]> = {
   AVAILABLE: ['ISSUED', 'RESERVED', 'DAMAGED', 'MAINTENANCE', 'OUT_OF_SERVICE'],
   RESERVED: ['ISSUED', 'AVAILABLE'],
-  ISSUED: ['AVAILABLE', 'RETURNED', 'DAMAGED', 'MAINTENANCE'],
-  IN_USE: ['AVAILABLE', 'RETURNED', 'DAMAGED'],
+  ISSUED: ['AVAILABLE', 'RETURNED', 'NEEDS_CLEANING', 'DAMAGED', 'MAINTENANCE'],
+  IN_USE: ['AVAILABLE', 'RETURNED', 'NEEDS_CLEANING', 'DAMAGED'],
   RETURNED: ['AVAILABLE', 'DAMAGED', 'MAINTENANCE', 'OUT_OF_SERVICE'],
   DAMAGED: ['MAINTENANCE', 'OUT_OF_SERVICE'],
   MAINTENANCE: ['AVAILABLE', 'OUT_OF_SERVICE'],
   OUT_OF_SERVICE: ['MAINTENANCE', 'AVAILABLE'],
+  // Post-use cleaning: a rental skate is never directly reissued, it must pass through CLEANING first.
+  NEEDS_CLEANING: ['CLEANING', 'MAINTENANCE', 'OUT_OF_SERVICE'],
+  CLEANING: ['AVAILABLE', 'MAINTENANCE'],
 };
 
 function assertEqTransition(e: { code: string; status: EquipmentStatus }, to: EquipmentStatus, verb: string) {
@@ -58,17 +61,23 @@ export async function listEquipment(ctx: Ctx, opts: { status?: string; q?: strin
 
 export async function getEquipment(ctx: Ctx, id: string) {
   assertCan(ctx, 'equipment.read');
-  const e = await one<any>(ctx.db, 'SELECT * FROM equipment WHERE id=$1 AND venue_id=$2', [id, ctx.venueId]);
+  const e = await one<any>(ctx.db, 'SELECT eq.*, u.full_name AS last_cleaned_by_name FROM equipment eq LEFT JOIN users u ON u.id=eq.last_cleaned_by WHERE eq.id=$1 AND eq.venue_id=$2', [id, ctx.venueId]);
   if (!e) throw E.notFound('Equipment');
   const events = await many<any>(ctx.db,
     `SELECT ee.event_type, ee.from_status, ee.to_status, ee.occurred_at, ee.metadata, u.full_name AS actor_name
        FROM equipment_events ee LEFT JOIN users u ON u.id=ee.actor_user_id WHERE ee.equipment_id=$1 ORDER BY ee.id DESC LIMIT 200`, [id]);
-  const maint = await many<any>(ctx.db,
-    `SELECT id, issue, status, reported_at, started_at, completed_at, resolution, (photo_key IS NOT NULL) AS has_photo FROM maintenance_records WHERE equipment_id=$1 ORDER BY reported_at DESC`, [id]);
+  const records = await many<any>(ctx.db,
+    `SELECT id, kind, issue, status, reported_at, started_at, completed_at, resolution, checklist, (photo_key IS NOT NULL) AS has_photo FROM maintenance_records WHERE equipment_id=$1 ORDER BY reported_at DESC`, [id]);
   const usage = await one<any>(ctx.db,
     `SELECT count(*) FILTER (WHERE event_type='ISSUED')::int AS times_issued,
-            count(*) FILTER (WHERE event_type='MAINTENANCE_COMPLETED')::int AS times_repaired FROM equipment_events WHERE equipment_id=$1`, [id]);
-  return { ...toCamel(e), events: toCamelAll(events), maintenance: toCamelAll(maint), usage: toCamel(usage) };
+            count(*) FILTER (WHERE event_type='MAINTENANCE_COMPLETED')::int AS times_repaired,
+            count(*) FILTER (WHERE event_type='CLEANING_COMPLETED')::int AS times_cleaned FROM equipment_events WHERE equipment_id=$1`, [id]);
+  return {
+    ...toCamel(e), events: toCamelAll(events),
+    maintenance: toCamelAll(records.filter((r) => r.kind === 'DAMAGE')),
+    cleaningHistory: toCamelAll(records.filter((r) => r.kind === 'CLEANING')),
+    usage: toCamel(usage),
+  };
 }
 
 export async function createEquipment(ctx: Ctx, i: { code: string; category?: string; size?: string | null; condition?: 'NEW' | 'GOOD' | 'FAIR' | 'POOR'; location?: string | null }) {
@@ -133,6 +142,9 @@ export async function returnEquipment(ctx: Ctx, equipmentId: string, input: { co
     await ctx.db.query(`INSERT INTO maintenance_records (venue_id, equipment_id, issue, status, reported_by, reported_at) VALUES ($1,$2,$3,'OPEN',$4,$5)`,
       [ctx.venueId, equipmentId, input.note?.trim() || 'Damaged on return', ctx.user?.id ?? null, ctx.now]);
     await emit(ctx, 'EQUIPMENT_DAMAGED', 'equipment', equipmentId, { equipmentId, code: e.code });
+  } else if (settings.cleaning.afterUseRequired) {
+    // Standard rule: every rental skate is cleaned after every customer use before it goes out again.
+    await setStatus(ctx, e, 'NEEDS_CLEANING', 'NEEDS_CLEANING', {}, s.id);
   } else {
     await setStatus(ctx, e, settings.inspectOnReturn ? 'RETURNED' : 'AVAILABLE', settings.inspectOnReturn ? 'AWAITING_INSPECTION' : 'RETURNED_TO_STOCK', {}, s.id);
   }
@@ -211,6 +223,99 @@ export async function markOutOfService(ctx: Ctx, equipmentId: string, input: { r
   await audit(ctx, { action: 'equipment.out_of_service', entityType: 'equipment', entityId: equipmentId, reason: input.reason, after: { code: e.code } });
   await emit(ctx, 'EQUIPMENT_STATUS_CHANGED', 'equipment', equipmentId, { equipmentId, status: 'OUT_OF_SERVICE' });
   return { equipmentId, status: 'OUT_OF_SERVICE' };
+}
+
+// ---------- cleaning ----------
+
+export const CLEANING_CHECKLIST_ITEMS = ['interior', 'exterior', 'wheels', 'laces', 'noDamage'] as const;
+
+export async function startCleaning(ctx: Ctx, equipmentId: string) {
+  assertCan(ctx, 'equipment.cleaning');
+  const e = await lockOne<any>(ctx.db, 'SELECT * FROM equipment WHERE id=$1 AND venue_id=$2 FOR NO KEY UPDATE', [equipmentId, ctx.venueId], 'Equipment');
+  assertEqTransition(e, 'CLEANING', 'start cleaning');
+  await setStatus(ctx, e, 'CLEANING', 'CLEANING_STARTED');
+  await ctx.db.query(`INSERT INTO maintenance_records (venue_id, equipment_id, issue, status, kind, reported_by, reported_at, started_at) VALUES ($1,$2,'Routine cleaning','IN_PROGRESS','CLEANING',$3,$4,$4)`,
+    [ctx.venueId, equipmentId, ctx.user?.id ?? null, ctx.now]);
+  await audit(ctx, { action: 'equipment.cleaning_started', entityType: 'equipment', entityId: equipmentId, after: { code: e.code } });
+  await emit(ctx, 'EQUIPMENT_STATUS_CHANGED', 'equipment', equipmentId, { equipmentId, status: 'CLEANING' });
+  return { equipmentId, status: 'CLEANING' };
+}
+
+export async function completeCleaning(ctx: Ctx, equipmentId: string, input: { checklist: Record<string, boolean>; notes?: string | null }) {
+  assertCan(ctx, 'equipment.cleaning');
+  const e = await lockOne<any>(ctx.db, 'SELECT * FROM equipment WHERE id=$1 AND venue_id=$2 FOR NO KEY UPDATE', [equipmentId, ctx.venueId], 'Equipment');
+  if (!['NEEDS_CLEANING', 'CLEANING'].includes(e.status)) throw E.conflict('EQUIPMENT_INVALID_TRANSITION', `${e.code} is not waiting for cleaning (it is ${e.status.toLowerCase().replace('_', ' ')}).`);
+  const missing = CLEANING_CHECKLIST_ITEMS.filter((k) => input.checklist[k] !== true);
+  if (missing.length) throw E.unprocessable('CHECKLIST_INCOMPLETE', 'Every checklist item must be checked off before completing cleaning.', { missing });
+  const settings = await getSettings(ctx.db, ctx.venueId);
+  const openRecord = await one<any>(ctx.db, `SELECT id FROM maintenance_records WHERE equipment_id=$1 AND kind='CLEANING' AND status <> 'COMPLETED' ORDER BY reported_at DESC LIMIT 1`, [equipmentId]);
+  if (openRecord) {
+    await ctx.db.query(`UPDATE maintenance_records SET status='COMPLETED', completed_at=$2, completed_by=$3, resolution=$4, checklist=$5 WHERE id=$1`,
+      [openRecord.id, ctx.now, ctx.user?.id ?? null, input.notes ?? null, JSON.stringify(input.checklist)]);
+  } else {
+    await ctx.db.query(`INSERT INTO maintenance_records (venue_id, equipment_id, issue, status, kind, reported_by, reported_at, started_at, completed_at, completed_by, resolution, checklist)
+      VALUES ($1,$2,'Routine cleaning','COMPLETED','CLEANING',$3,$4,$4,$4,$3,$5,$6)`,
+      [ctx.venueId, equipmentId, ctx.user?.id ?? null, ctx.now, input.notes ?? null, JSON.stringify(input.checklist)]);
+  }
+  const dueAt = new Date(ctx.now.getTime() + settings.cleaning.deepCleanDays * 86_400_000);
+  await ctx.db.query('UPDATE equipment SET status=$2, last_cleaned_at=$3, last_cleaned_by=$4, cleaning_due_at=$5, updated_at=$3 WHERE id=$1', [equipmentId, 'AVAILABLE', ctx.now, ctx.user?.id ?? null, dueAt]);
+  await recordEquipmentEvent(ctx, equipmentId, 'CLEANING_COMPLETED', { from: e.status, to: 'AVAILABLE', meta: { checklist: input.checklist } });
+  await audit(ctx, { action: 'equipment.cleaning_completed', entityType: 'equipment', entityId: equipmentId, after: { code: e.code, checklist: input.checklist } });
+  await emit(ctx, 'EQUIPMENT_STATUS_CHANGED', 'equipment', equipmentId, { equipmentId, status: 'AVAILABLE' });
+  return { equipmentId, status: 'AVAILABLE', lastCleanedAt: ctx.now.toISOString(), cleaningDueAt: dueAt.toISOString() };
+}
+
+/** Damage noticed mid-clean: goes straight to maintenance, never back out to another customer. */
+export async function reportCleaningIssue(ctx: Ctx, equipmentId: string, input: { issue: string }) {
+  assertCan(ctx, 'equipment.cleaning');
+  const e = await lockOne<any>(ctx.db, 'SELECT * FROM equipment WHERE id=$1 AND venue_id=$2 FOR NO KEY UPDATE', [equipmentId, ctx.venueId], 'Equipment');
+  if (!['NEEDS_CLEANING', 'CLEANING'].includes(e.status)) throw E.conflict('EQUIPMENT_INVALID_TRANSITION', `${e.code} is not in the cleaning queue.`);
+  await ctx.db.query(`UPDATE maintenance_records SET status='COMPLETED', completed_at=$2, resolution='Moved to maintenance: issue found during cleaning' WHERE equipment_id=$1 AND kind='CLEANING' AND status <> 'COMPLETED'`, [equipmentId, ctx.now]);
+  await setStatus(ctx, e, 'MAINTENANCE', 'MAINTENANCE_STARTED', { issue: input.issue, foundDuringCleaning: true });
+  await ctx.db.query(`INSERT INTO maintenance_records (venue_id, equipment_id, issue, status, kind, reported_by, reported_at, started_at) VALUES ($1,$2,$3,'IN_PROGRESS','DAMAGE',$4,$5,$5)`,
+    [ctx.venueId, equipmentId, input.issue.trim(), ctx.user?.id ?? null, ctx.now]);
+  await audit(ctx, { action: 'equipment.cleaning_issue_reported', entityType: 'equipment', entityId: equipmentId, after: { code: e.code, issue: input.issue } });
+  await emit(ctx, 'EQUIPMENT_DAMAGED', 'equipment', equipmentId, { equipmentId, code: e.code });
+  return { equipmentId, status: 'MAINTENANCE' };
+}
+
+export async function cleaningQueue(ctx: Ctx) {
+  assertCan(ctx, 'equipment.cleaning');
+  const settings = await getSettings(ctx.db, ctx.venueId);
+  const rows = await many<any>(ctx.db,
+    `SELECT e.*, (SELECT ee.occurred_at FROM equipment_events ee WHERE ee.equipment_id=e.id AND ee.event_type='NEEDS_CLEANING' ORDER BY ee.id DESC LIMIT 1) AS returned_at,
+            (SELECT c.full_name FROM equipment_assignments ea JOIN customers c ON c.id=ea.customer_id WHERE ea.equipment_id=e.id ORDER BY ea.assigned_at DESC LIMIT 1) AS last_customer_name
+       FROM equipment e WHERE e.venue_id=$1 AND e.status IN ('NEEDS_CLEANING','CLEANING') ORDER BY e.updated_at`, [ctx.venueId]);
+  const completed = await many<any>(ctx.db,
+    `SELECT e.id, e.code, e.size, e.last_cleaned_at, e.last_cleaned_by, u.full_name AS last_cleaned_by_name FROM equipment e LEFT JOIN users u ON u.id=e.last_cleaned_by
+      WHERE e.venue_id=$1 AND e.last_cleaned_at IS NOT NULL ORDER BY e.last_cleaned_at DESC LIMIT 50`, [ctx.venueId]);
+  const overdueScheduled = await many<any>(ctx.db,
+    `SELECT id, code, size, cleaning_due_at FROM equipment WHERE venue_id=$1 AND status NOT IN ('OUT_OF_SERVICE') AND cleaning_due_at IS NOT NULL AND cleaning_due_at < $2 ORDER BY cleaning_due_at`, [ctx.venueId, ctx.now]);
+  return {
+    needsCleaning: toCamelAll(rows.filter((r) => r.status === 'NEEDS_CLEANING')),
+    cleaning: toCamelAll(rows.filter((r) => r.status === 'CLEANING')),
+    completed: toCamelAll(completed),
+    overdueScheduled: toCamelAll(overdueScheduled),
+    rules: settings.cleaning,
+  };
+}
+
+export async function equipmentHealth(ctx: Ctx) {
+  assertCan(ctx, 'equipment.read');
+  const counts = await one<any>(ctx.db,
+    `SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE status='AVAILABLE')::int AS available,
+            count(*) FILTER (WHERE status IN ('ISSUED','IN_USE'))::int AS in_use,
+            count(*) FILTER (WHERE status='NEEDS_CLEANING')::int AS needs_cleaning,
+            count(*) FILTER (WHERE status='CLEANING')::int AS cleaning,
+            count(*) FILTER (WHERE status IN ('DAMAGED','MAINTENANCE'))::int AS maintenance,
+            count(*) FILTER (WHERE status='OUT_OF_SERVICE')::int AS out_of_service,
+            count(*) FILTER (WHERE cleaning_due_at IS NOT NULL AND cleaning_due_at < $2)::int AS overdue
+       FROM equipment WHERE venue_id=$1`, [ctx.venueId, ctx.now]);
+  const cleanedToday = await one<any>(ctx.db, `SELECT count(*)::int AS n FROM equipment WHERE venue_id=$1 AND last_cleaned_at >= date_trunc('day', $2::timestamptz)`, [ctx.venueId, ctx.now]);
+  const pendingCleaning = counts.needs_cleaning + counts.cleaning;
+  const compliance = counts.total > 0 ? Math.round(((counts.total - counts.overdue - counts.needs_cleaning) / counts.total) * 100) : 100;
+  return { ...toCamel(counts), cleanedToday: cleanedToday.n, pendingCleaning, cleaningCompliancePct: compliance };
 }
 
 export async function attachMaintenancePhoto(ctx: Ctx, equipmentId: string, recordId: string | null, bytes: Buffer, written: { keys: string[] }) {

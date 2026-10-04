@@ -61,6 +61,8 @@ class SessionDetail {
   final int dueMinor;
   final int priceMinor;
   final int discountMinor;
+  final String? shoeClaimId;
+  final String? shoeClaimNumber;
   final List<SessionEvent> events;
   final List<SessionExtension> extensions;
   final List<EquipmentAssignmentRow> equipmentAssignments;
@@ -68,7 +70,7 @@ class SessionDetail {
   SessionDetail({
     required this.session, required this.status, required this.customerId, required this.visitId,
     required this.remainingSeconds, required this.paidMinor, required this.pendingMinor, required this.dueMinor,
-    required this.priceMinor, required this.discountMinor,
+    required this.priceMinor, required this.discountMinor, required this.shoeClaimId, required this.shoeClaimNumber,
     required this.events, required this.extensions, required this.equipmentAssignments,
   });
 
@@ -85,6 +87,8 @@ class SessionDetail {
       dueMinor: (s['dueMinor'] as int?) ?? 0,
       priceMinor: (s['priceMinor'] as int?) ?? 0,
       discountMinor: (s['discountMinor'] as int?) ?? 0,
+      shoeClaimId: s['shoeClaimId'] as String?,
+      shoeClaimNumber: s['shoeClaimNumber'] as String?,
       events: ((j['events'] as List?) ?? const []).map((e) => SessionEvent.fromJson(e as Map<String, dynamic>)).toList(),
       extensions: ((j['extensions'] as List?) ?? const []).map((e) => SessionExtension.fromJson(e as Map<String, dynamic>)).toList(),
       equipmentAssignments: ((j['equipmentAssignments'] as List?) ?? const []).map((e) => EquipmentAssignmentRow.fromJson(e as Map<String, dynamic>)).toList(),

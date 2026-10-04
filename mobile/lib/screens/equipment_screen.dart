@@ -6,16 +6,19 @@ import '../models/me.dart';
 import '../theme.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/reason_dialog.dart';
+import '../widgets/cleaning_checklist_dialog.dart';
 import '../format.dart';
 import 'equipment/equipment_detail_sheet.dart';
 
 /// Canonical status order so the filter chips are always in the same place regardless of
 /// what the summary map from the server happens to contain.
-const _statusOrder = ['AVAILABLE', 'ISSUED', 'RETURNED', 'DAMAGED', 'MAINTENANCE', 'OUT_OF_SERVICE', 'RESERVED'];
+const _statusOrder = ['AVAILABLE', 'ISSUED', 'NEEDS_CLEANING', 'CLEANING', 'RETURNED', 'DAMAGED', 'MAINTENANCE', 'OUT_OF_SERVICE', 'RESERVED'];
 
 const _statusLabels = {
   'AVAILABLE': 'Available',
   'ISSUED': 'Issued',
+  'NEEDS_CLEANING': 'Needs cleaning',
+  'CLEANING': 'Cleaning',
   'RETURNED': 'Returned',
   'DAMAGED': 'Damaged',
   'MAINTENANCE': 'Maintenance',
@@ -26,6 +29,8 @@ const _statusLabels = {
 (String, IconData) _statusLevel(String status) => switch (status) {
       'AVAILABLE' => ('normal', Icons.check_circle_outline),
       'ISSUED' => ('info', Icons.directions_walk),
+      'NEEDS_CLEANING' => ('orange', Icons.cleaning_services_outlined),
+      'CLEANING' => ('info', Icons.cleaning_services_outlined),
       'RETURNED' => ('yellow', Icons.undo),
       'DAMAGED' => ('red', Icons.warning_amber_rounded),
       'MAINTENANCE' => ('orange', Icons.build_outlined),
@@ -204,6 +209,12 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
                     if (issue == null) return;
                     await _quickAction(() => _api.post('/equipment/${it.id}/damage', {'issue': issue, 'startMaintenance': true}));
                   },
+                  onStartCleaning: () => _quickAction(() => _api.post('/equipment/${it.id}/cleaning/start')),
+                  onMarkCleaned: () async {
+                    final result = await showCleaningChecklistDialog(context, code: it.code);
+                    if (result == null) return;
+                    await _quickAction(() => _api.post('/equipment/${it.id}/cleaning/complete', {'checklist': result.checklist, 'notes': result.notes}));
+                  },
                 )),
         ],
       ),
@@ -235,6 +246,8 @@ class _EquipmentCard extends StatelessWidget {
   final Future<void> Function() onReturnDamaged;
   final Future<void> Function() onInspectOk;
   final Future<void> Function() onReportDamage;
+  final Future<void> Function() onStartCleaning;
+  final Future<void> Function() onMarkCleaned;
   const _EquipmentCard({
     required this.item,
     required this.me,
@@ -243,6 +256,8 @@ class _EquipmentCard extends StatelessWidget {
     required this.onReturnDamaged,
     required this.onInspectOk,
     required this.onReportDamage,
+    required this.onStartCleaning,
+    required this.onMarkCleaned,
   });
 
   @override
@@ -252,6 +267,10 @@ class _EquipmentCard extends StatelessWidget {
     if (item.status == 'ISSUED' && me.can('equipment.return')) {
       actions.add(OutlinedButton(onPressed: onReturnOk, child: const Text('Return OK')));
       actions.add(OutlinedButton(onPressed: onReturnDamaged, child: const Text('Damaged')));
+    } else if (item.status == 'NEEDS_CLEANING' && me.can('equipment.cleaning')) {
+      actions.add(FilledButton.tonal(onPressed: onStartCleaning, child: const Text('Start cleaning')));
+    } else if (item.status == 'CLEANING' && me.can('equipment.cleaning')) {
+      actions.add(FilledButton.tonal(style: FilledButton.styleFrom(backgroundColor: LsColors.greenSoft, foregroundColor: LsColors.green), onPressed: onMarkCleaned, child: const Text('Mark Cleaned')));
     } else if (item.status == 'RETURNED' && me.can('equipment.return')) {
       actions.add(FilledButton.tonal(onPressed: onInspectOk, child: const Text('Inspected OK')));
     } else if (item.status == 'AVAILABLE' && me.can('equipment.maintenance')) {

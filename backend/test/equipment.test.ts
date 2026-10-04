@@ -27,8 +27,9 @@ describe('equipment lifecycle', () => {
     const ret = await w.api('rental', 'POST', `/equipment/${s}/return`, { condition: 'GOOD' });
     expect(ret.status).toBe(200);
     expect(ret.body.visitCompleted).toBe(true);
-    expect(await status(s)).toBe('AVAILABLE');
-    expect(await events(s)).toEqual(['CREATED', 'ISSUED', 'RETURNED', 'RETURNED_TO_STOCK']);
+    // Standard rule: a returned rental skate needs cleaning before it can go out again.
+    expect(await status(s)).toBe('NEEDS_CLEANING');
+    expect(await events(s)).toEqual(['CREATED', 'ISSUED', 'RETURNED', 'NEEDS_CLEANING']);
     const again = await w.api('rental', 'POST', `/equipment/${s}/return`, { condition: 'GOOD' });
     expect(again.status).toBe(409);
     expect(again.body.error.code).toBe('EQUIPMENT_NOT_ISSUED');
@@ -109,7 +110,9 @@ describe('equipment lifecycle', () => {
 
   it('inspect-on-return setting routes returned units through RETURNED until inspected', async () => {
     const w2 = await makeWorld();
-    await w2.api('owner', 'PUT', '/settings', { inspectOnReturn: true });
+    // Tested independently of the newer post-use cleaning requirement, which would otherwise
+    // route every GOOD return straight to NEEDS_CLEANING regardless of this setting.
+    await w2.api('owner', 'PUT', '/settings', { inspectOnReturn: true, cleaning: { afterUseRequired: false, deepCleanDays: 7, inspectionDays: 30 } });
     const [s] = await addSkates(w2, 1, 'INSP');
     const a = await activeSession(w2, { equipmentIds: [s] });
     await w2.api('front', 'POST', `/sessions/${a.sessionId}/end`, {});

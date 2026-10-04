@@ -83,14 +83,25 @@ class EquipmentDetail {
   final EquipmentItem item;
   final List<EquipmentEvent> events;
   final List<MaintenanceRecord> maintenance;
+  final List<MaintenanceRecord> cleaningHistory;
   final int timesIssued;
   final int timesRepaired;
-  EquipmentDetail({required this.item, required this.events, required this.maintenance, required this.timesIssued, required this.timesRepaired});
+  final DateTime? lastCleanedAt;
+  final String? lastCleanedByName;
+  final DateTime? cleaningDueAt;
+  EquipmentDetail({
+    required this.item, required this.events, required this.maintenance, required this.cleaningHistory,
+    required this.timesIssued, required this.timesRepaired, required this.lastCleanedAt, required this.lastCleanedByName, required this.cleaningDueAt,
+  });
   factory EquipmentDetail.fromJson(Map<String, dynamic> j) => EquipmentDetail(
         item: EquipmentItem.fromJson(j),
         events: ((j['events'] as List?) ?? const []).map((e) => EquipmentEvent.fromJson(e as Map<String, dynamic>)).toList(),
         maintenance: ((j['maintenance'] as List?) ?? const []).map((e) => MaintenanceRecord.fromJson(e as Map<String, dynamic>)).toList(),
+        cleaningHistory: ((j['cleaningHistory'] as List?) ?? const []).map((e) => MaintenanceRecord.fromJson(e as Map<String, dynamic>)).toList(),
         timesIssued: ((j['usage'] as Map<String, dynamic>?)?['timesIssued'] as int?) ?? 0,
         timesRepaired: ((j['usage'] as Map<String, dynamic>?)?['timesRepaired'] as int?) ?? 0,
+        lastCleanedAt: j['lastCleanedAt'] == null ? null : DateTime.tryParse(j['lastCleanedAt'] as String),
+        lastCleanedByName: j['lastCleanedByName'] as String?,
+        cleaningDueAt: j['cleaningDueAt'] == null ? null : DateTime.tryParse(j['cleaningDueAt'] as String),
       );
 }

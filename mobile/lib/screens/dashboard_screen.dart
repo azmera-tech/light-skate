@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../alarm/expiry_coordinator.dart';
 import '../api/api_client.dart';
 import '../models/dashboard.dart';
 import '../theme.dart';
@@ -8,6 +9,8 @@ import '../widgets/status_badge.dart';
 import 'session_detail_screen.dart';
 import 'checkin/checkin_flow.dart';
 import 'customers/customer_search_screen.dart';
+import 'shoes/shoe_claims_screen.dart';
+import 'equipment/cleaning_queue_screen.dart';
 
 String _money(int? minor, String currency) {
   if (minor == null) return '—';
@@ -65,6 +68,9 @@ class DashboardScreenState extends State<DashboardScreen> {
         _data = Dashboard.fromJson(dashJson as Map<String, dynamic>);
         _error = null;
       });
+      // Fire-and-forget: reconciling the session-expiry alarm must never block the dashboard
+      // render, and a failed reconcile just gets retried on the next poll/refresh tick.
+      unawaited(ExpiryCoordinator.instance.reconcile(_data!, _api).catchError((_) {}));
       widget.onDataChanged?.call();
     } catch (e) {
       if (!mounted) return;
@@ -139,6 +145,30 @@ class DashboardScreenState extends State<DashboardScreen> {
                   _KpiGrid(d: d),
                   const SizedBox(height: 14),
                   _RinkSummary(d: d),
+                  if (d.shoesOnShelf != null || d.cleaningNeeds != null) ...[
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      if (d.shoesOnShelf != null)
+                        Expanded(
+                          child: _QuickLinkCard(
+                            emoji: '👟',
+                            title: 'Shoes on Shelf',
+                            subtitle: '${d.shoesOnShelf} active claim${d.shoesOnShelf == 1 ? '' : 's'}',
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShoeClaimsScreen())).then((_) => _load(silent: true)),
+                          ),
+                        ),
+                      if (d.shoesOnShelf != null && d.cleaningNeeds != null) const SizedBox(width: 10),
+                      if (d.cleaningNeeds != null)
+                        Expanded(
+                          child: _QuickLinkCard(
+                            emoji: '🧼',
+                            title: 'Cleaning',
+                            subtitle: '${d.cleaningNeeds} need cleaning${(d.cleaningOverdue ?? 0) > 0 ? ', ${d.cleaningOverdue} overdue' : ''}',
+                            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CleaningQueueScreen())).then((_) => _load(silent: true)),
+                          ),
+                        ),
+                    ]),
+                  ],
                   const SizedBox(height: 14),
                   Text('Live rink', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
@@ -263,6 +293,38 @@ class _RinkSummary extends StatelessWidget {
             LsBadge(label: '${d.expired} time up', level: 'expired', icon: Icons.stop_circle_outlined),
           ]),
         ]),
+      ),
+    );
+  }
+}
+
+class _QuickLinkCard extends StatelessWidget {
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _QuickLinkCard({required this.emoji, required this.title, required this.subtitle, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(children: [
+            Text(emoji, style: const TextStyle(fontSize: 22)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                Text(subtitle, style: const TextStyle(color: LsColors.muted, fontSize: 12)),
+              ]),
+            ),
+            const Icon(Icons.chevron_right, color: LsColors.muted),
+          ]),
+        ),
       ),
     );
   }

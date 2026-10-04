@@ -6,11 +6,14 @@ import '../../theme.dart';
 import '../../widgets/status_badge.dart';
 import '../../widgets/reason_dialog.dart';
 import '../../widgets/camera_capture.dart';
+import '../../widgets/cleaning_checklist_dialog.dart';
 import '../../format.dart';
 
 const _detailStatusLabels = {
   'AVAILABLE': 'Available',
   'ISSUED': 'Issued',
+  'NEEDS_CLEANING': 'Needs cleaning',
+  'CLEANING': 'Cleaning',
   'RETURNED': 'Returned',
   'DAMAGED': 'Damaged',
   'MAINTENANCE': 'Maintenance',
@@ -21,6 +24,8 @@ const _detailStatusLabels = {
 (String, IconData) _detailStatusLevel(String status) => switch (status) {
       'AVAILABLE' => ('normal', Icons.check_circle_outline),
       'ISSUED' => ('info', Icons.directions_walk),
+      'NEEDS_CLEANING' => ('orange', Icons.cleaning_services_outlined),
+      'CLEANING' => ('info', Icons.cleaning_services_outlined),
       'RETURNED' => ('yellow', Icons.undo),
       'DAMAGED' => ('red', Icons.warning_amber_rounded),
       'MAINTENANCE' => ('orange', Icons.build_outlined),
@@ -120,6 +125,20 @@ class _EquipmentDetailSheetState extends State<EquipmentDetailSheet> {
     await _run(() => _api.postRawImage('/equipment/${widget.equipmentId}/maintenance/photo', bytes));
   }
 
+  Future<void> _startCleaning() => _run(() => _api.post('/equipment/${widget.equipmentId}/cleaning/start'));
+
+  Future<void> _markCleaned() async {
+    final result = await showCleaningChecklistDialog(context, code: _detail!.item.code);
+    if (result == null) return;
+    await _run(() => _api.post('/equipment/${widget.equipmentId}/cleaning/complete', {'checklist': result.checklist, 'notes': result.notes}));
+  }
+
+  Future<void> _reportCleaningIssue() async {
+    final issue = await showCleaningIssueDialog(context, code: _detail!.item.code);
+    if (issue == null) return;
+    await _run(() => _api.post('/equipment/${widget.equipmentId}/cleaning/issue', {'issue': issue}));
+  }
+
   List<Widget> _actionButtons() {
     final item = _detail!.item;
     final me = widget.me;
@@ -130,6 +149,14 @@ class _EquipmentDetailSheetState extends State<EquipmentDetailSheet> {
     if (item.status == 'ISSUED' && me.can('equipment.return')) {
       buttons.add(FilledButton.tonal(onPressed: _busy ? null : _returnOk, child: const Text('Return OK')));
       buttons.add(OutlinedButton(onPressed: _busy ? null : _returnDamaged, child: const Text('Return — damaged')));
+    }
+    if (item.status == 'NEEDS_CLEANING' && me.can('equipment.cleaning')) {
+      buttons.add(FilledButton.tonal(onPressed: _busy ? null : _startCleaning, child: const Text('Start cleaning')));
+      buttons.add(OutlinedButton(onPressed: _busy ? null : _reportCleaningIssue, child: const Text('Report issue')));
+    }
+    if (item.status == 'CLEANING' && me.can('equipment.cleaning')) {
+      buttons.add(FilledButton.tonal(style: FilledButton.styleFrom(backgroundColor: LsColors.greenSoft, foregroundColor: LsColors.green), onPressed: _busy ? null : _markCleaned, child: const Text('Mark Cleaned')));
+      buttons.add(OutlinedButton(onPressed: _busy ? null : _reportCleaningIssue, child: const Text('Report issue')));
     }
     if (item.status == 'RETURNED' && me.can('equipment.return')) {
       buttons.add(FilledButton.tonal(onPressed: _busy ? null : _inspectOk, child: const Text('Inspected OK')));
@@ -175,6 +202,21 @@ class _EquipmentDetailSheetState extends State<EquipmentDetailSheet> {
                       Wrap(spacing: 8, runSpacing: 8, children: _actionButtons()),
                       const SizedBox(height: 18),
                     ],
+                    Text('Cleaning', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    if (_detail!.lastCleanedAt != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'Last cleaned ${fmtDate(_detail!.lastCleanedAt!)} ${fmtHHMM(_detail!.lastCleanedAt)}${_detail!.lastCleanedByName != null ? ' by ${_detail!.lastCleanedByName}' : ''}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    if (_detail!.cleaningHistory.isEmpty)
+                      const Text('No cleaning records.', style: TextStyle(color: LsColors.muted))
+                    else
+                      ..._detail!.cleaningHistory.map((m) => _MaintenanceTile(record: m)),
+                    const SizedBox(height: 18),
                     Text('Maintenance history', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 8),
                     if (_detail!.maintenance.isEmpty)

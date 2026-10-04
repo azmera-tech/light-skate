@@ -25,6 +25,7 @@ import * as sessions from './modules/sessions.js';
 import * as payments from './modules/payments.js';
 import * as equipment from './modules/equipment.js';
 import * as incidents from './modules/incidents.js';
+import * as shoeClaims from './modules/shoe_claims.js';
 import * as photos from './modules/photos.js';
 import * as pricing from './modules/pricing.js';
 import * as admin from './modules/admin.js';
@@ -126,7 +127,7 @@ export function registerRoutes(app: FastifyInstance, hub: RealtimeHub) {
         paymentMethods: settings.paymentMethods.filter((m) => m.enabled), warnings: settings.warnings, expiringMinutes: settings.expiringMinutes,
         pause: settings.pause, extensionOptionsMinutes: settings.extensionOptionsMinutes, waiverRequired: settings.waiverRequired, minorAgeYears: settings.minorAgeYears,
         photoCapture: settings.photoCapture, wristbands: settings.wristbands, equipmentRequiredForStart: settings.equipmentRequiredForStart, inspectOnReturn: settings.inspectOnReturn,
-        earlyExitGraceSeconds: settings.earlyExitGraceSeconds,
+        earlyExitGraceSeconds: settings.earlyExitGraceSeconds, cleaning: settings.cleaning,
       },
       emergency: settings.emergency,
     };
@@ -300,6 +301,15 @@ export function registerRoutes(app: FastifyInstance, hub: RealtimeHub) {
     return sendImage(reply, { bytes: await storage.get(rec.photo_key), mime: rec.photo_mime });
   });
 
+  // ---------------------------------------------------------------- equipment cleaning
+  get('/equipment/cleaning-queue', (ctx) => equipment.cleaningQueue(ctx));
+  get('/equipment/health', (ctx) => equipment.equipmentHealth(ctx));
+  command('post', '/equipment/:id/cleaning/start', { op: 'equipment.cleaning_start', perm: 'equipment.cleaning' }, (ctx, _b, req) => equipment.startCleaning(ctx, idParam(req)));
+  command('post', '/equipment/:id/cleaning/complete', { op: 'equipment.cleaning_complete', perm: 'equipment.cleaning',
+    body: z.object({ checklist: z.record(z.boolean()), notes: z.string().max(500).nullish() }) }, (ctx, b, req) => equipment.completeCleaning(ctx, idParam(req), b));
+  command('post', '/equipment/:id/cleaning/issue', { op: 'equipment.cleaning_issue', perm: 'equipment.cleaning', body: z.object({ issue: z.string().trim().min(3).max(500) }) },
+    (ctx, b, req) => equipment.reportCleaningIssue(ctx, idParam(req), b));
+
   // ---------------------------------------------------------------- incidents
   command('post', '/incidents', { op: 'incident.create', perm: 'incident.create', status: 201, idem: 'optional',
     body: z.object({ customerId: uuid.nullish(), sessionId: uuid.nullish(), occurredAt: z.coerce.date().nullish(), location: z.string().max(100).nullish(), incidentType: z.string().trim().min(2).max(60),
@@ -326,6 +336,42 @@ export function registerRoutes(app: FastifyInstance, hub: RealtimeHub) {
     const a = await read(req, (ctx) => incidents.loadIncidentAttachment(ctx, idParam(req)));
     void user;
     return sendImage(reply, a);
+  });
+
+  // ---------------------------------------------------------------- personal shoe claims
+  app.post(`${P}/shoe-claims`, async (req, reply) => {
+    await authenticate(req);
+    rateLimit('upload', req.auth!.id, 10, 60_000, 'Too many photo uploads. Please wait a moment.');
+    const q = parse(z.object({ customerId: uuid, visitId: uuid, sessionId: uuid.optional() }), req.query);
+    const bytes = req.body as Buffer;
+    if (!Buffer.isBuffer(bytes)) throw E.badRequest('IMAGE_REQUIRED', 'Send the shoe photo as a JPEG, PNG or WebP image body.');
+    const written = { keys: [] as string[] };
+    try {
+      const r = await execute(metaOf(req), { operation: 'shoe_claim.create', permission: 'shoeclaim.manage', idempotency: 'optional', successStatus: 201 },
+        { q, sha: createHash('sha256').update(bytes).digest('hex') },
+        (ctx) => shoeClaims.createShoeClaim(ctx, q, bytes, written));
+      reply.status(r.status);
+      return r.body;
+    } catch (e) {
+      for (const k of written.keys) await storage.delete(k).catch(() => {});
+      throw e;
+    }
+  });
+  get('/shoe-claims', async (ctx, req) => shoeClaims.listShoeClaims(ctx, parse(z.object({ active: z.enum(['true', 'false']).optional() }), req.query).active === 'false' ? { active: false } : {}));
+  get('/shoe-claims/search', (ctx, req) => shoeClaims.findShoeClaimByNumber(ctx, parse(z.object({ number: z.string().trim().min(2).max(20) }), req.query).number).then((claim) => ({ claim })));
+  get('/shoe-claims/:id', async (ctx, req) => ({ claim: await shoeClaims.getShoeClaim(ctx, idParam(req)) }));
+  command('post', '/shoe-claims/:id/return', { op: 'shoe_claim.return', perm: 'shoeclaim.manage', idem: 'required' }, (ctx, _b, req) => shoeClaims.returnShoeClaim(ctx, idParam(req)));
+  command('post', '/shoe-claims/:id/report', { op: 'shoe_claim.report', perm: 'shoeclaim.manage',
+    body: z.object({ type: z.enum(['SHOE_MISMATCH', 'SHOE_MISSING', 'SHOE_DAMAGED', 'OTHER']), description: z.string().trim().min(3).max(1000) }) },
+    (ctx, b, req) => shoeClaims.reportShoeIssue(ctx, idParam(req), b));
+  command('post', '/shoe-claims/:id/link-session', { op: 'shoe_claim.link_session', perm: 'shoeclaim.manage', body: z.object({ sessionId: uuid } ) },
+    async (ctx, b, req) => { await shoeClaims.attachSessionToClaim(ctx, idParam(req), b.sessionId); return { ok: true }; });
+  app.get(`${P}/shoe-claims/:id/photo`, async (req, reply) => {
+    const user = await authenticate(req);
+    if (!user.permissions.has('shoeclaim.manage')) throw E.forbidden("You don't have permission to view shoe claims.");
+    const rec = await one<any>(pool, `SELECT photo_key, photo_mime FROM shoe_claims WHERE id=$1 AND venue_id=$2`, [idParam(req), user.venueId]);
+    if (!rec) throw E.notFound('Photo');
+    return sendImage(reply, { bytes: await storage.get(rec.photo_key), mime: rec.photo_mime });
   });
 
   // ---------------------------------------------------------------- dashboard / reports / close

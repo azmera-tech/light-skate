@@ -43,7 +43,7 @@ class LocalDriver implements StorageDriver {
 export const storage: StorageDriver = new LocalDriver();
 
 /** Server-generated storage key. User-provided names are never used. */
-export function newStorageKey(venueId: string, kind: 'customer' | 'incident' | 'maintenance', ext: string) {
+export function newStorageKey(venueId: string, kind: 'customer' | 'incident' | 'maintenance' | 'shoe', ext: string) {
   return `${venueId}/${kind}/${randomUUID()}.${ext}`;
 }
 

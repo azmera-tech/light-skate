@@ -37,6 +37,14 @@ export async function getDashboard(ctx: Ctx) {
   const equipmentOut = await one<any>(ctx.db, `SELECT count(*)::int AS n FROM equipment_assignments WHERE venue_id=$1 AND returned_at IS NULL`, [ctx.venueId]);
   const equipmentIssues = await one<any>(ctx.db, `SELECT count(*)::int AS n FROM equipment WHERE venue_id=$1 AND status IN ('DAMAGED','MAINTENANCE','OUT_OF_SERVICE','RETURNED')`, [ctx.venueId]);
   const incidents = can(ctx, 'incident.read') ? await one<any>(ctx.db, `SELECT count(*)::int AS n FROM incidents WHERE venue_id=$1 AND status <> 'CLOSED'`, [ctx.venueId]) : null;
+  const shoes = can(ctx, 'shoeclaim.manage')
+    ? await one<any>(ctx.db, `SELECT count(*)::int AS on_shelf FROM shoe_claims WHERE venue_id=$1 AND status <> 'RETURNED'`, [ctx.venueId])
+    : null;
+  const cleaning = can(ctx, 'equipment.cleaning')
+    ? await one<any>(ctx.db, `SELECT count(*) FILTER (WHERE status='NEEDS_CLEANING')::int AS needs_cleaning,
+            count(*) FILTER (WHERE cleaning_due_at IS NOT NULL AND cleaning_due_at < $2)::int AS overdue
+         FROM equipment WHERE venue_id=$1`, [ctx.venueId, ctx.now])
+    : null;
   const alerts = await many<any>(ctx.db,
     `SELECT id, type, severity, title, body, entity_type, entity_id, status, created_at FROM notifications WHERE venue_id=$1 AND status='OPEN' ORDER BY created_at DESC LIMIT 20`, [ctx.venueId]);
   const live = await listSessions(ctx, { group: 'live' });
@@ -48,6 +56,8 @@ export async function getDashboard(ctx: Ctx) {
     waiting: counts.waiting, awaitingPayment: counts.awaiting_payment,
     equipment: { out: equipmentOut.n, needsAttention: equipmentIssues.n },
     openIncidents: incidents ? incidents.n : null,
+    shoes: shoes ? { onShelf: shoes.on_shelf } : null,
+    cleaning: cleaning ? { needsCleaning: cleaning.needs_cleaning, overdue: cleaning.overdue } : null,
     alerts: alerts.map((a) => ({ id: a.id, type: a.type, severity: a.severity, title: a.title, body: a.body, entityType: a.entity_type, entityId: a.entity_id, createdAt: a.created_at })),
     liveSessions: live.sessions,
   };

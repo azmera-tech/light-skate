@@ -38,6 +38,14 @@ export const SETTING_SCHEMAS = {
   wristbands: z.object({ enabled: z.boolean(), colors: z.array(z.string().min(1).max(20)) }).default({ enabled: false, colors: ['BLUE', 'GREEN', 'ORANGE', 'RED'] }),
   equipmentRequiredForStart: z.boolean().default(false),
   inspectOnReturn: z.boolean().default(false),
+  cleaning: z
+    .object({
+      // Standard rule: every rental skate is cleaned after every customer use before it can be reissued.
+      afterUseRequired: z.boolean(),
+      deepCleanDays: z.number().int().min(1).max(90),
+      inspectionDays: z.number().int().min(1).max(180),
+    })
+    .default({ afterUseRequired: true, deepCleanDays: 7, inspectionDays: 30 }),
   enforceOperatingHours: z.boolean().default(false),
   operatingHours: z.record(z.string().regex(/^[0-6]$/), hours).default({
     '0': { open: '09:00', close: '22:00' }, '1': { open: '09:00', close: '22:00' }, '2': { open: '09:00', close: '22:00' },
