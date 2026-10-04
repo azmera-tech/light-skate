@@ -107,7 +107,7 @@ class _ShoeClaimsScreenState extends State<ShoeClaimsScreen> {
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) {
                       final c = d.items[i];
-                      return _ClaimTile(claim: c, onTap: () => _openClaim(c));
+                      return _ClaimTile(key: ValueKey(c.id), claim: c, onTap: () => _openClaim(c));
                     },
                   ),
       ),
@@ -118,7 +118,7 @@ class _ShoeClaimsScreenState extends State<ShoeClaimsScreen> {
 class _ClaimTile extends StatelessWidget {
   final ShoeClaim claim;
   final VoidCallback onTap;
-  const _ClaimTile({required this.claim, required this.onTap});
+  const _ClaimTile({super.key, required this.claim, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

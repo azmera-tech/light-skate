@@ -29,7 +29,14 @@ class _AuthedPhotoState extends State<AuthedPhoto> {
   @override
   void didUpdateWidget(covariant AuthedPhoto old) {
     super.didUpdateWidget(old);
-    if (old.photoId != widget.photoId) _load();
+    if (old.photoId != widget.photoId) {
+      // Without this, a list item whose widget gets reused for a different person (Flutter can
+      // recycle State objects across list positions when items are removed/reordered without a
+      // Key) would keep showing the PREVIOUS person's photo until the new fetch resolves — or
+      // forever, if the new photoId fetch fails and falls into the catch below.
+      setState(() => _bytes = null);
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -46,9 +53,9 @@ class _AuthedPhotoState extends State<AuthedPhoto> {
       final api = await ApiClient.instance();
       final bytes = Uint8List.fromList(await api.photoBytes(id));
       _cache[id] = bytes;
-      if (mounted) setState(() => _bytes = bytes);
+      if (mounted && widget.photoId == id) setState(() => _bytes = bytes);
     } catch (_) {
-      // keep the initials fallback
+      if (mounted && widget.photoId == id) setState(() => _bytes = null);
     }
   }
 

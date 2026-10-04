@@ -120,6 +120,7 @@ class _CleaningQueueScreenState extends State<CleaningQueueScreen> {
       padding: const EdgeInsets.all(14),
       children: [
         ...d.needsCleaning.map((item) => _CleaningCard(
+              key: ValueKey(item.id),
               item: item,
               subtitle: item.returnedAt != null ? 'Returned ${_agoLabel(item.returnedAt!)}${item.lastCustomerName != null ? ' · ${item.lastCustomerName}' : ''}' : null,
               statusLabel: 'Needs cleaning',
@@ -132,6 +133,7 @@ class _CleaningQueueScreenState extends State<CleaningQueueScreen> {
         if (d.overdueScheduled.isNotEmpty) ...[
           const Padding(padding: EdgeInsets.only(top: 8, bottom: 6), child: Text('Overdue for scheduled deep clean', style: TextStyle(fontWeight: FontWeight.w700, color: LsColors.red))),
           ...d.overdueScheduled.map((item) => _CleaningCard(
+              key: ValueKey(item.id),
                 item: item,
                 subtitle: 'Overdue for deep inspection',
                 statusLabel: 'Overdue',
@@ -149,6 +151,7 @@ class _CleaningQueueScreenState extends State<CleaningQueueScreen> {
       padding: const EdgeInsets.all(14),
       children: d.cleaning
           .map((item) => _CleaningCard(
+              key: ValueKey(item.id),
                 item: item,
                 subtitle: item.returnedAt != null ? 'Returned ${_agoLabel(item.returnedAt!)}' : null,
                 statusLabel: 'Cleaning',
@@ -168,6 +171,7 @@ class _CleaningQueueScreenState extends State<CleaningQueueScreen> {
       padding: const EdgeInsets.all(14),
       children: d.completed
           .map((item) => _CleaningCard(
+              key: ValueKey(item.id),
                 item: item,
                 subtitle: item.lastCleanedByName != null ? 'Cleaned by ${item.lastCleanedByName}' : null,
                 statusLabel: 'Cleaned',
@@ -192,7 +196,7 @@ class _CleaningCard extends StatelessWidget {
   final String statusLabel;
   final String statusLevel;
   final List<Widget> actions;
-  const _CleaningCard({required this.item, required this.subtitle, required this.statusLabel, required this.statusLevel, required this.actions});
+  const _CleaningCard({super.key, required this.item, required this.subtitle, required this.statusLabel, required this.statusLevel, required this.actions});
   @override
   Widget build(BuildContext context) {
     return Card(

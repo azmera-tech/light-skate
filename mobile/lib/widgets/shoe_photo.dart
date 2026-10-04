@@ -30,21 +30,29 @@ class _ShoePhotoState extends State<ShoePhoto> {
   @override
   void didUpdateWidget(covariant ShoePhoto old) {
     super.didUpdateWidget(old);
-    if (old.claimId != widget.claimId) _load();
+    if (old.claimId != widget.claimId) {
+      // Without this, a list item whose widget gets reused for a different claim (Flutter can
+      // recycle State objects across list positions when items are removed/reordered without a
+      // Key) would keep showing the PREVIOUS claim's photo until the new fetch resolves — or
+      // forever, if the new claim has no photo and the fetch 404s into the catch below.
+      setState(() => _bytes = null);
+      _load();
+    }
   }
 
   Future<void> _load() async {
-    if (_cache.containsKey(widget.claimId)) {
-      setState(() => _bytes = _cache[widget.claimId]);
+    final claimId = widget.claimId;
+    if (_cache.containsKey(claimId)) {
+      setState(() => _bytes = _cache[claimId]);
       return;
     }
     try {
       final api = await ApiClient.instance();
-      final bytes = Uint8List.fromList(await api.getBytes('/shoe-claims/${widget.claimId}/photo'));
-      _cache[widget.claimId] = bytes;
-      if (mounted) setState(() => _bytes = bytes);
+      final bytes = Uint8List.fromList(await api.getBytes('/shoe-claims/$claimId/photo'));
+      _cache[claimId] = bytes;
+      if (mounted && widget.claimId == claimId) setState(() => _bytes = bytes);
     } catch (_) {
-      // keep the icon fallback
+      if (mounted && widget.claimId == claimId) setState(() => _bytes = null);
     }
   }
 
