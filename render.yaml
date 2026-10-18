@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: light-skate-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /api/v1/health
+    # Runs after build, before the new instance serves traffic — applies any new backend/migrations/*.sql.
+    preDeployCommand: node dist/migrate.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: EMBEDDED_WORKER
+        value: "true"
+      # Supabase Postgres — use the direct connection or the "Session" pooler, NOT the "Transaction"
+      # pooler (LISTEN/NOTIFY, used by the realtime hub, needs a session-capable connection).
+      - key: DATABASE_URL
+        sync: false
+      - key: SIGNING_SECRET
+        generateValue: true
+      - key: STORAGE_DRIVER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: light-skate-photos
+      - key: CORS_ORIGIN
+        sync: false
