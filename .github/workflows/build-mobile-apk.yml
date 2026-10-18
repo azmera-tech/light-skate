@@ -5,14 +5,19 @@ name: Build Flutter APK
 # rather than being built locally: it needs no Android Studio install on anyone's machine.
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, claude/beautiful-ramanujan-mjzaa7]
     paths: ['mobile/**', '.github/workflows/build-mobile-apk.yml']
   workflow_dispatch:
     inputs:
       api_base_url:
         description: 'Backend URL the app should talk to (e.g. https://your-venue.example.com)'
         required: false
-        default: 'http://localhost:8090'
+        default: 'https://light-skate-api.onrender.com'
+      demo_mode:
+        description: 'Build a no-backend demo APK instead (ignores api_base_url)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write # needed by the "publish APK to repo" step below
@@ -33,7 +38,7 @@ jobs:
       - run: flutter test
       # --split-per-abi produces one APK per CPU architecture instead of one fat APK containing all
       # three, so the file a single device actually needs is a fraction of the combined size.
-      - run: flutter build apk --release --split-per-abi --dart-define=API_BASE_URL=${{ github.event.inputs.api_base_url || 'http://localhost:8090' }}
+      - run: flutter build apk --release --split-per-abi --dart-define=API_BASE_URL=${{ github.event.inputs.api_base_url || 'https://light-skate-api.onrender.com' }} --dart-define=DEMO_MODE=${{ github.event.inputs.demo_mode || 'false' }}
       - uses: actions/upload-artifact@v4
         with:
           name: light-skate-mobile-apks
