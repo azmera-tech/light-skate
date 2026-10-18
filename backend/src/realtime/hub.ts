@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { config } from '../config.js';
+import { pgSsl } from '../db.js';
 import { resolveToken } from '../auth/service.js';
 import { REALTIME_CHANNEL } from '../worker/outbox.js';
 
@@ -30,7 +31,10 @@ export class RealtimeHub {
 
   private async connectListener() {
     if (this.stopped) return;
-    const client = new pg.Client({ connectionString: config.databaseUrl });
+    // Needs a session-capable connection (LISTEN doesn't work over a transaction-mode pooler —
+    // see .env.example's note on DATABASE_URL) — same connection string and TLS settings as the
+    // main pool in db.ts.
+    const client = new pg.Client({ connectionString: config.databaseUrl, ssl: pgSsl });
     client.on('error', () => this.reconnect());
     client.on('end', () => this.reconnect());
     client.on('notification', (m) => {

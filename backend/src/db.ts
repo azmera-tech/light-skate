@@ -8,7 +8,28 @@ pg.types.setTypeParser(1700, (v) => Number(v));
 // date -> plain 'YYYY-MM-DD' string (avoid JS timezone shifts)
 pg.types.setTypeParser(1082, (v) => v);
 
-export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: config.dbPoolMax });
+// Supabase (and most managed Postgres) requires TLS; a local/Docker Postgres on localhost
+// doesn't speak it at all, so this is inferred from the host rather than NODE_ENV, and can
+// still be overridden explicitly via DB_SSL for unusual setups.
+const dbHost = (() => {
+  try {
+    return new URL(config.databaseUrl).hostname;
+  } catch {
+    return '';
+  }
+})();
+const isLocalDb = dbHost === 'localhost' || dbHost === '127.0.0.1' || dbHost === '';
+const sslEnabled = config.dbSsl ?? !isLocalDb;
+// Shared with realtime/hub.ts's dedicated LISTEN client, which needs the same TLS settings.
+export const pgSsl = sslEnabled ? ({ rejectUnauthorized: false } as const) : undefined;
+
+export const pool = new pg.Pool({
+  connectionString: config.databaseUrl,
+  max: config.dbPoolMax,
+  // Supabase's certificate chain isn't always present in Node's default trust store; the
+  // connection itself is still encrypted either way, this only skips hostname/CA verification.
+  ssl: pgSsl,
+});
 pool.on('error', (err) => {
   // idle client errors must not crash the process
   console.error('pg pool error', err.message);
