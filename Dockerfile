@@ -26,4 +26,6 @@ WORKDIR /app/backend
 EXPOSE 8080
 VOLUME ["/var/lib/light-skate/storage"]
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://localhost:8080/api/v1/health || exit 1
-CMD ["node", "dist/server.js"]
+# Migrations run on every container start (idempotent — migrate.ts skips anything already applied),
+# so a fresh deploy always has the current schema before the server starts accepting traffic.
+CMD ["sh", "-c", "node dist/migrate.js && node dist/server.js"]
