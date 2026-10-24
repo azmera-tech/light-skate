@@ -33,6 +33,7 @@ import * as reports from './modules/reports.js';
 import * as dashboard from './modules/dashboard.js';
 import * as dayclose from './modules/dayclose.js';
 import * as loyalty from './modules/loyalty.js';
+import * as ps from './modules/playstation.js';
 import { normalizePhone } from './shared/phone.js';
 import { assertUuid } from './modules/util.js';
 
@@ -411,6 +412,62 @@ export function registerRoutes(app: FastifyInstance, hub: RealtimeHub) {
       return out;
     } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
   });
+
+  // ---------------------------------------------------------------- PlayStation gaming
+  const payBody = z.object({ method: z.string().max(24), reference: z.string().trim().max(100).nullish(), confirmed: z.boolean().optional(), note: z.string().max(300).nullish() });
+  const psPackageBody = z.object({
+    name: z.string().trim().min(1).max(60), description: z.string().max(300).nullish(), pricingType: z.enum(['DURATION', 'PER_GAME']),
+    durationMinutes: z.number().int().min(1).max(1440).nullish(), gamesPerUnit: z.number().int().min(1).max(100).nullish(), gameLabel: z.string().trim().max(40).nullish(),
+    priceMinor: z.number().int().positive().max(100_000_000), active: z.boolean().optional(), sortOrder: z.number().int().optional(),
+  });
+  const psConsoleBody = z.object({ code: z.string().trim().min(1).max(20), name: z.string().trim().min(1).max(60), model: z.string().max(60).nullish(), location: z.string().max(60).nullish(), notes: z.string().max(500).nullish(), status: z.enum(['ACTIVE', 'MAINTENANCE', 'INACTIVE']).optional() });
+  get('/playstation/overview', (ctx) => ps.overview(ctx));
+  get('/playstation/consoles', (ctx, req) => ps.listConsoles(ctx, { includeArchived: parse(z.object({ archived: z.enum(['true', 'false']).optional() }), req.query).archived === 'true' }));
+  command('post', '/playstation/consoles', { op: 'ps.console_create', perm: 'playstation.manage', status: 201, body: psConsoleBody }, (ctx, b) => ps.createConsole(ctx, b));
+  command('patch', '/playstation/consoles/:id', { op: 'ps.console_update', perm: 'playstation.manage', body: psConsoleBody.partial().extend({ archived: z.boolean().optional() }) }, (ctx, b, req) => ps.updateConsole(ctx, idParam(req), b));
+  get('/playstation/packages', (ctx, req) => ps.listPackages(ctx, { includeInactive: parse(z.object({ all: z.enum(['true', 'false']).optional() }), req.query).all === 'true' }));
+  command('post', '/playstation/packages', { op: 'ps.package_create', perm: 'playstation.manage', status: 201, body: psPackageBody }, (ctx, b) => ps.createPackage(ctx, b));
+  command('patch', '/playstation/packages/:id', { op: 'ps.package_update', perm: 'playstation.manage', body: psPackageBody.partial() }, (ctx, b, req) => ps.updatePackage(ctx, idParam(req), b));
+  command('delete', '/playstation/packages/:id', { op: 'ps.package_delete', perm: 'playstation.manage' }, (ctx, _b, req) => ps.deletePackage(ctx, idParam(req)));
+  get('/playstation/sessions', (ctx, req) => ps.listGamingSessions(ctx, parse(z.object({
+    from: dateStr.optional(), to: dateStr.optional(), consoleId: uuid.optional(), operatorId: uuid.optional(), packageId: uuid.optional(),
+    status: z.enum(['PENDING_PAYMENT', 'READY', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED']).optional(),
+    paymentStatus: z.enum(['UNPAID', 'PENDING', 'PARTIALLY_PAID', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED']).optional(),
+    mine: z.enum(['true', 'false']).optional(), limit: z.coerce.number().int().min(1).max(500).optional(), offset: z.coerce.number().int().min(0).optional(),
+  }).transform((q) => ({ ...q, mine: q.mine === 'true' })), req.query)));
+  get('/playstation/sessions/:id', (ctx, req) => ps.getGamingSession(ctx, idParam(req)));
+  command('post', '/playstation/sessions', { op: 'ps.session_create', perm: 'playstation.operate', idem: 'required', status: 201,
+    body: z.object({ consoleId: uuid, packageId: uuid, quantity: z.number().int().min(1).max(50).optional(), customerId: uuid.nullish(), walkInName: z.string().trim().max(120).nullish(),
+      walkInPhone: z.string().trim().max(30).nullish(), notes: z.string().max(500).nullish(), payment: payBody.extend({ amountMinor: z.number().int().positive().optional() }).nullish() }) },
+    (ctx, b) => ps.createGamingSession(ctx, b));
+  command('post', '/playstation/sessions/:id/payments', { op: 'ps.payment', perm: 'playstation.operate', idem: 'required', status: 201, body: payBody.extend({ amountMinor: z.number().int().positive().max(100_000_000) }) },
+    (ctx, b, req) => ps.recordPayment(ctx, idParam(req), b));
+  command('post', '/playstation/sessions/:id/start', { op: 'ps.start', perm: 'playstation.operate', idem: 'required' }, (ctx, _b, req) => ps.startGamingSession(ctx, idParam(req)));
+  command('post', '/playstation/sessions/:id/pause', { op: 'ps.pause', perm: 'playstation.operate', body: z.object({ reason: z.string().max(300).nullish() }) }, (ctx, b, req) => ps.pauseGamingSession(ctx, idParam(req), b.reason));
+  command('post', '/playstation/sessions/:id/resume', { op: 'ps.resume', perm: 'playstation.operate' }, (ctx, _b, req) => ps.resumeGamingSession(ctx, idParam(req)));
+  command('post', '/playstation/sessions/:id/extend', { op: 'ps.extend', perm: 'playstation.operate', idem: 'required', body: z.object({ packageId: uuid, quantity: z.number().int().min(1).max(50).optional(), payment: payBody }) },
+    (ctx, b, req) => ps.extendGamingSession(ctx, idParam(req), b));
+  command('post', '/playstation/sessions/:id/games-complete', { op: 'ps.games_complete', perm: 'playstation.operate', idem: 'required', body: z.object({ count: z.number().int().min(1).max(50).optional() }) },
+    (ctx, b, req) => ps.completeGames(ctx, idParam(req), b.count ?? 1));
+  command('post', '/playstation/sessions/:id/finish', { op: 'ps.finish', perm: 'playstation.operate', idem: 'required', body: z.object({ reason: z.string().max(300).nullish() }) },
+    (ctx, b, req) => ps.finishGamingSession(ctx, idParam(req), b));
+  command('post', '/playstation/sessions/:id/cancel', { op: 'ps.cancel', perm: 'playstation.operate', body: z.object({ reason }) }, (ctx, b, req) => ps.cancelGamingSession(ctx, idParam(req), b.reason));
+  for (const [action, outcome] of [['confirm', 'CONFIRM'], ['cancel', 'CANCEL']] as const) {
+    command('post', `/playstation/payments/:id/${action}`, { op: `ps.payment_${action}`, perm: 'playstation.operate', body: z.object({ reference: z.string().max(100).nullish() }) },
+      (ctx, b, req) => ps.resolvePayment(ctx, idParam(req), outcome, b.reference));
+  }
+  command('post', '/playstation/payments/:id/refund', { op: 'ps.refund', perm: 'playstation.refund', idem: 'required', body: z.object({ amountMinor: z.number().int().positive().optional(), reason }) },
+    (ctx, b, req) => ps.refundPayment(ctx, idParam(req), b));
+  get('/playstation/reports', (ctx, req) => ps.reports(ctx, parse(z.object({ from: dateStr, to: dateStr }), req.query)));
+  get('/playstation/activity', (ctx, req) => ps.employeeActivity(ctx, parse(z.object({ userId: uuid.optional(), limit: z.coerce.number().int().min(1).max(500).optional() }), req.query)));
+  get('/playstation/customer-lookup', (ctx, req) => ps.lookupCustomerByPhone(ctx, parse(z.object({ phone: z.string().trim().min(5).max(30) }), req.query).phone));
+  get('/playstation/settings', async (ctx) => {
+    if (!can(ctx, 'playstation.operate') && !can(ctx, 'playstation.manage')) throw E.forbidden("You don't have access to the PlayStation module.");
+    const s = await getSettings(ctx.db, ctx.venueId);
+    return { settings: s.playstation, paymentMethods: s.paymentMethods.filter((m) => m.enabled) };
+  });
+  command('put', '/playstation/settings', { op: 'ps.settings', perm: 'playstation.manage', body: z.object({ warningMinutes: z.number().int().min(1).max(60), requirePaymentBeforeStart: z.boolean(), pauseEnabled: z.boolean() }) },
+    async (ctx, b) => ({ settings: (await admin.updateSettings(ctx, { playstation: b }, 'playstation.manage')).playstation }));
 
   // ---------------------------------------------------------------- dashboard / reports / close
   get('/dashboard', (ctx) => dashboard.getDashboard(ctx));

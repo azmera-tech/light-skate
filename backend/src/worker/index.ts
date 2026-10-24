@@ -2,6 +2,7 @@ import { pool, many, withTx } from '../db.js';
 import { config } from '../config.js';
 import { clock } from '../shared/clock.js';
 import { processSessionTimers } from '../modules/sessions.js';
+import { processGamingTimers } from '../modules/playstation.js';
 import { processOutbox } from './outbox.js';
 import { storage } from '../storage/index.js';
 import { getSettings } from '../settings.js';
@@ -47,7 +48,10 @@ export async function tick() {
   ticking = true;
   try {
     const venues = await many<{ id: string }>(pool, `SELECT id FROM venues WHERE status='ACTIVE'`);
-    for (const v of venues) await processSessionTimers(v.id).catch((e) => console.error('timers failed', (e as Error).message));
+    for (const v of venues) {
+      await processSessionTimers(v.id).catch((e) => console.error('timers failed', (e as Error).message));
+      await processGamingTimers(v.id).catch((e) => console.error('gaming timers failed', (e as Error).message));
+    }
     let n;
     do { n = await processOutbox(); } while (n >= config.worker.outboxBatch);
     if (Date.now() - lastHousekeeping > 10 * 60_000) {
