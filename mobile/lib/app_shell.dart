@@ -4,7 +4,6 @@ import 'alarm/expiry_coordinator.dart';
 import 'alarm/expiry_queue.dart';
 import 'api/api_client.dart';
 import 'api/realtime_client.dart';
-import 'demo/demo_mode.dart';
 import 'models/me.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/customers/customer_search_screen.dart';
@@ -16,6 +15,10 @@ import 'screens/checkin/checkin_flow.dart';
 import 'screens/expiry_alert_screen.dart';
 import 'screens/login_screen.dart';
 import 'widgets/emergency_dialog.dart';
+import 'widgets/change_password_dialog.dart';
+import 'screens/playstation/ps_dashboard_screen.dart';
+import 'screens/playstation/ps_history_screen.dart';
+import 'screens/playstation/ps_session_screen.dart';
 import 'theme.dart';
 
 /// The permission-driven app shell: a bottom nav of tabs the signed-in staff member is allowed
@@ -38,12 +41,15 @@ class _NavTab {
 }
 
 final _allTabs = <_NavTab>[
-  _NavTab('Live', Icons.dashboard_outlined, (k) => DashboardScreen(key: k), (me) => true),
+  _NavTab('Live', Icons.dashboard_outlined, (k) => DashboardScreen(key: k), (me) => me.can('session.read')),
   _NavTab('Check-in', Icons.person_add_alt_1_outlined, (_) => const CheckInFlow(), (me) => me.can('session.create'), isAction: true),
   _NavTab('Customers', Icons.people_outline, (_) => const CustomerSearchScreen(), (me) => me.canAny(['customer.read', 'customer.create'])),
   _NavTab('History', Icons.history, (_) => const HistoryScreen(), (me) => me.can('visit.read')),
   _NavTab('Equipment', Icons.sports_hockey_outlined, (_) => const EquipmentScreen(), (me) => me.can('equipment.read')),
   _NavTab('Incidents', Icons.report_problem_outlined, (_) => const IncidentsScreen(), (me) => me.canAny(['incident.create', 'incident.read'])),
+  _NavTab('Gaming', Icons.sports_esports_outlined, (_) => const PsDashboardScreen(), (me) => me.can('playstation.operate')),
+  // Dedicated PlayStation staff get their history as a tab; everyone else reaches it from the Gaming screen.
+  _NavTab('Gaming log', Icons.receipt_long_outlined, (_) => const PsHistoryScreen(), (me) => me.can('playstation.operate') && !me.can('session.read')),
 ];
 
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
@@ -69,25 +75,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (me == null) return; // _Bootstrap in main.dart only routes here when authenticated
     _me = me;
     _tabs = _allTabs.where((t) => t.visible(me)).toList();
-    if (kDemoMode) {
-      // No real server to hold a WebSocket open to; the dashboard's own poll timer is the
-      // only refresh mechanism in demo mode. Show the status dot as permanently "live" rather
-      // than a misleading "offline".
-      _rtStatus = 'live';
-    } else {
-      _rt = RealtimeClient(
-        api: _api,
-        onEvent: () => _dashboardKey.currentState?.refreshNow(),
-        onStatus: (s) {
-          if (mounted) setState(() => _rtStatus = s);
-        },
-      );
-      _rt!.connect();
-    }
+    _rt = RealtimeClient(
+      api: _api,
+      onEvent: () => _dashboardKey.currentState?.refreshNow(),
+      onStatus: (s) {
+        if (mounted) setState(() => _rtStatus = s);
+      },
+    );
+    _rt!.connect();
     // The native half of the session-expiry alarm: fires even with the app backgrounded or the
-    // screen locked (see lib/alarm/expiry_alarm_service.dart). Independent of demo mode — it's
-    // pure on-device scheduling, nothing to do with where session data comes from.
+    // screen locked (see lib/alarm/expiry_alarm_service.dart).
     await ExpiryAlarmService.instance.init(onNotificationTapped: (sessionId) async {
+      if (sessionId.startsWith('ps:')) {
+        if (mounted) Navigator.of(context).push(MaterialPageRoute(builder: (_) => PsSessionScreen(sessionId: sessionId.substring(3))));
+        return;
+      }
       await ExpiryCoordinator.instance.surfaceById(sessionId, _api);
     });
     if (mounted) setState(() {});
@@ -157,7 +159,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final showAdmin = me.canAny(managementPerms);
     // Body tabs only (skip the "Check-in" entry, which is an action, not a persistent page).
     final bodyTabs = _tabs.where((t) => !t.isAction).toList();
-    final selectedBodyIndex = bodyTabs.indexOf(_tabs[_index.clamp(0, _tabs.length - 1)]).clamp(0, bodyTabs.length - 1);
+    final selectedBodyIndex = bodyTabs.isEmpty ? 0 : bodyTabs.indexOf(_tabs[_index.clamp(0, _tabs.length - 1)]).clamp(0, bodyTabs.length - 1);
 
     return Scaffold(
       appBar: AppBar(
@@ -182,18 +184,36 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           ),
           if (showAdmin) IconButton(onPressed: _openAdmin, icon: const Icon(Icons.admin_panel_settings_outlined), tooltip: 'Admin'),
           IconButton(onPressed: () => showEmergencyDialog(context), icon: const Icon(Icons.emergency, color: LsColors.red), tooltip: 'Emergency'),
-          IconButton(onPressed: _signOut, icon: const Icon(Icons.logout), tooltip: 'Sign out'),
+          PopupMenuButton<String>(
+            tooltip: 'My account',
+            icon: const Icon(Icons.account_circle_outlined),
+            onSelected: (v) {
+              if (v == 'password') showChangePasswordDialog(context);
+              if (v == 'signout') _signOut();
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(enabled: false, child: Text('${me.fullName}\n${me.role.replaceAll('_', ' ')}', style: const TextStyle(color: LsColors.text, fontWeight: FontWeight.w600))),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'password', child: ListTile(leading: Icon(Icons.lock_reset), title: Text('Change my password'), contentPadding: EdgeInsets.zero)),
+              const PopupMenuItem(value: 'signout', child: ListTile(leading: Icon(Icons.logout), title: Text('Sign out'), contentPadding: EdgeInsets.zero)),
+            ],
+          ),
         ],
       ),
-      body: IndexedStack(
-        index: selectedBodyIndex,
-        children: bodyTabs.map((t) => t.build(_dashboardKey)).toList(),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index.clamp(0, _tabs.length - 1),
-        onDestinationSelected: _onSelect,
-        destinations: _tabs.map((t) => NavigationDestination(icon: Icon(t.icon), label: t.label)).toList(),
-      ),
+      body: bodyTabs.isEmpty
+          ? const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('Your account has no screens assigned yet. Ask an administrator to check your role.', textAlign: TextAlign.center)))
+          : IndexedStack(
+              index: selectedBodyIndex,
+              children: bodyTabs.map((t) => t.build(_dashboardKey)).toList(),
+            ),
+      // NavigationBar needs at least two destinations.
+      bottomNavigationBar: _tabs.length < 2
+          ? null
+          : NavigationBar(
+              selectedIndex: _index.clamp(0, _tabs.length - 1),
+              onDestinationSelected: _onSelect,
+              destinations: _tabs.map((t) => NavigationDestination(icon: Icon(t.icon), label: t.label)).toList(),
+            ),
     );
   }
 }

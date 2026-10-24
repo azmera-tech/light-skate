@@ -112,6 +112,51 @@ class ExpiryAlarmService {
     }
   }
 
+  /// PlayStation gaming: a heads-up [warningMinutes] before a timed session ends, and a time-up
+  /// alert at the end. Payload `ps:<id>` lets a tap open the gaming session rather than a skating one.
+  Future<void> scheduleGamingAlerts({
+    required String sessionId, required String consoleCode, required String playerName,
+    required DateTime expectedEndAt, required int warningMinutes,
+  }) async {
+    if (!_ready || !_isAndroid) return;
+    await cancelGamingAlerts(sessionId);
+    final warnAt = expectedEndAt.subtract(Duration(minutes: warningMinutes));
+    final alerts = <(int, DateTime, String, String)>[
+      ((('ps-warn-$sessionId').hashCode & 0x7fffffff), warnAt, '$consoleCode: $warningMinutes min left', "$playerName's gaming time ends soon."),
+      ((('ps-up-$sessionId').hashCode & 0x7fffffff), expectedEndAt, '$consoleCode: TIME UP', "$playerName's gaming time has ended. Finish or extend the session."),
+    ];
+    for (final (id, at, title, body) in alerts) {
+      if (at.isBefore(DateTime.now())) continue;
+      try {
+        await _plugin.zonedSchedule(
+          id, title, body, tz.TZDateTime.from(at, tz.local),
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              _channelId, _channelName,
+              channelDescription: _channelDesc,
+              importance: Importance.max,
+              priority: Priority.high,
+              category: AndroidNotificationCategory.alarm,
+              visibility: NotificationVisibility.public,
+              icon: '@mipmap/ic_launcher',
+            ),
+          ),
+          payload: 'ps:$sessionId',
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        );
+      } catch (_) {
+        // Exact alarms can be refused; the gaming dashboard still shows the warning while open.
+      }
+    }
+  }
+
+  Future<void> cancelGamingAlerts(String sessionId) async {
+    if (!_isAndroid) return;
+    await _plugin.cancel(('ps-warn-$sessionId').hashCode & 0x7fffffff);
+    await _plugin.cancel(('ps-up-$sessionId').hashCode & 0x7fffffff);
+  }
+
   Future<void> cancelExpiry(String sessionId) async {
     if (!_isAndroid) return;
     await _plugin.cancel(_notificationId(sessionId));

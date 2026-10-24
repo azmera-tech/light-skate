@@ -10,6 +10,7 @@ import '../../widgets/authed_photo.dart';
 import '../../widgets/reason_dialog.dart';
 import '../../widgets/status_badge.dart';
 import '../checkin/checkin_flow.dart';
+import '../loyalty/customer_loyalty_section.dart';
 
 /// Full customer profile: header, status/waiver badges, KPIs, emergency contacts, notes,
 /// visit history and permission-gated actions (check-in, edit, erase). Pushed via Navigator,
@@ -318,6 +319,10 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                     onEdit: _editCustomer,
                     onErase: _eraseCustomer,
                   ),
+                  if (_me?.can('loyalty.read') == true) ...[
+                    const SizedBox(height: 22),
+                    CustomerLoyaltySection(customerId: widget.customerId, customerName: p.fullName),
+                  ],
                   const SizedBox(height: 22),
                   Text(
                     'Visit history',

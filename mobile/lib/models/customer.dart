@@ -143,7 +143,7 @@ class CustomerProfile {
 
 class CustomerHistoryEntry {
   final String visitId;
-  final int visitNumber;
+  final String visitNumber;
   final String localDate;
   final String visitStatus;
   final DateTime createdAt;
@@ -166,7 +166,7 @@ class CustomerHistoryEntry {
 
   factory CustomerHistoryEntry.fromJson(Map<String, dynamic> j) => CustomerHistoryEntry(
         visitId: j['visitId'] as String,
-        visitNumber: (j['visitNumber'] as int?) ?? 0,
+        visitNumber: (j['visitNumber'] ?? '').toString(),
         localDate: (j['localDate'] as String?) ?? '',
         visitStatus: (j['visitStatus'] as String?) ?? '',
         createdAt: DateTime.tryParse((j['createdAt'] as String?) ?? '') ?? DateTime.now(),

@@ -3,7 +3,7 @@ library;
 
 class VisitRow {
   final String visitId;
-  final int visitNumber;
+  final String visitNumber;
   final String visitStatus;
   final DateTime createdAt;
   final String customerId;
@@ -32,7 +32,7 @@ class VisitRow {
 
   factory VisitRow.fromJson(Map<String, dynamic> j) => VisitRow(
         visitId: j['visitId'] as String,
-        visitNumber: (j['visitNumber'] as int?) ?? 0,
+        visitNumber: (j['visitNumber'] ?? '').toString(),
         visitStatus: (j['visitStatus'] as String?) ?? '',
         createdAt: DateTime.tryParse((j['createdAt'] as String?) ?? '') ?? DateTime.now(),
         customerId: j['customerId'] as String,

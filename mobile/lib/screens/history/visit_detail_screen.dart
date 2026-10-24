@@ -88,7 +88,7 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
   String? get _customerCode => _pick<String>(_visit, ['customerCode']);
   String? get _photoId => _pick<String>(_visit, ['photoId', 'customerPhotoId']);
   String? get _visitStatus => _pick<String>(_visit, ['visitStatus', 'status']);
-  int? get _visitNumber => _pick<int>(_visit, ['visitNumber']);
+  String? get _visitNumber => _pick<String>(_visit, ['visitNumber']);
 
   void _openProfile() {
     final id = _customerId;
@@ -103,7 +103,7 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _visitNumber != null ? 'Visit #$_visitNumber' : 'Visit detail',
+          _visitNumber != null ? 'Visit $_visitNumber' : 'Visit detail',
         ),
       ),
       body: _loading

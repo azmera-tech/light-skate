@@ -10,6 +10,9 @@ import '../widgets/authed_photo.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/session_level.dart';
 import '../widgets/reason_dialog.dart';
+import '../widgets/reward_earned_dialog.dart';
+import '../models/loyalty.dart';
+import 'customers/customer_profile_screen.dart';
 
 /// Full session-actions screen: extend / pause / resume / end / cancel / correct, equipment
 /// issue/return, and the full event timeline — reached by tapping a live session card anywhere
@@ -232,7 +235,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       ),
     );
     if (confirmed != true) return;
-    await _run(() => _api.post('/sessions/${widget.sessionId}/end'), successMessage: outstanding.isNotEmpty ? 'Session ended. Remember to collect: ${outstanding.map((e) => e.code).join(', ')}' : 'Session ended.');
+    StampResult? stamp;
+    await _run(() async {
+      final res = await _api.post('/sessions/${widget.sessionId}/end') as Map<String, dynamic>?;
+      stamp = StampResult.fromJson(res?['loyalty']);
+    }, successMessage: outstanding.isNotEmpty ? 'Session ended. Remember to collect: ${outstanding.map((e) => e.code).join(', ')}' : 'Session ended.');
+    final st = stamp;
+    if (st != null && st.awarded && mounted) {
+      final view = await showStampResult(context, st, customerName: s.session.customerName);
+      if (view && mounted) {
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => CustomerProfileScreen(customerId: s.customerId)));
+      }
+    }
   }
 
   Future<void> _cancel() async {

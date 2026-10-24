@@ -33,6 +33,8 @@ async function loadAuth(userId: string, deviceId: string | null): Promise<AuthUs
 }
 
 async function main() {
+  // Demo data must never reach a real venue's database.
+  if (process.env.NODE_ENV === 'production') throw new Error('Refusing to seed demo data in production. Use `npm run provision` for real accounts.');
   await migrate();
   await ensurePermissions(pool);
   if (await one(pool, 'SELECT 1 FROM venues WHERE slug=$1', [SLUG])) {

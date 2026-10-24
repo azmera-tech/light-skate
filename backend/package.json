@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "provision": "tsx src/provision.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

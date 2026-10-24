@@ -98,6 +98,8 @@ class SessionDetail {
 
 const sessionEventLabel = <String, String>{
   'SESSION_CREATED': 'Session created',
+  'LOYALTY_STAMP_AWARDED': 'Loyalty stamp awarded',
+  'LOYALTY_REWARD_APPLIED': 'Loyalty reward applied',
   'PAYMENT_REQUESTED': 'Payment requested',
   'PAYMENT_CONFIRMED': 'Payment confirmed',
   'CHECKED_IN': 'Checked in',

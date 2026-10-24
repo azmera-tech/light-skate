@@ -20,7 +20,7 @@ class _AuditEntry {
     required this.afterData, required this.reason, required this.createdAt, required this.actorName, required this.deviceName,
   });
   factory _AuditEntry.fromJson(Map<String, dynamic> j) => _AuditEntry(
-        id: j['id'] as String,
+        id: j['id'].toString(),
         action: j['action'] as String,
         entityType: (j['entityType'] as String?) ?? '',
         entityId: j['entityId'] as String?,

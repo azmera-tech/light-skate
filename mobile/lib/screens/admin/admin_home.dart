@@ -11,6 +11,8 @@ import 'devices_screen.dart';
 import 'audit_screen.dart';
 import 'close_day_screen.dart';
 import 'equipment_health_screen.dart';
+import 'loyalty_admin_screen.dart';
+import '../playstation/ps_admin_screen.dart';
 
 class _AdminPage {
   final String title;
@@ -61,6 +63,20 @@ class AdminHomeScreen extends StatelessWidget {
       icon: Icons.health_and_safety_outlined,
       visible: (me) => me.canAny(const ['equipment.manage', 'equipment.cleaning', 'equipment.maintenance']),
       builder: (_) => const EquipmentHealthScreen(),
+    ),
+    _AdminPage(
+      title: 'Loyalty',
+      subtitle: 'Members, tiers, rewards & corrections',
+      icon: Icons.loyalty_outlined,
+      visible: (me) => me.can('loyalty.correct'),
+      builder: (_) => const LoyaltyAdminScreen(),
+    ),
+    _AdminPage(
+      title: 'PlayStation',
+      subtitle: 'Consoles, packages, sessions & reports',
+      icon: Icons.sports_esports_outlined,
+      visible: (me) => me.canAny(const ['playstation.manage', 'playstation.reports']),
+      builder: (_) => const PsAdminScreen(),
     ),
     _AdminPage(
       title: 'Pricing',

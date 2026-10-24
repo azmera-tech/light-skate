@@ -1,11 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../demo/demo_mode.dart';
-import '../demo/mock_backend.dart';
 import '../models/me.dart';
 
 /// Thrown for any non-2xx response. Carries the server's own readable message —
@@ -36,6 +33,9 @@ class ApiClient {
   static const String _compiledBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:8090');
 
   final String baseUrl;
+  // Generous on purpose: the hosted server sleeps when idle and its first response after that can take ~50s.
+  static const _timeout = Duration(seconds: 60);
+  static const _uploadTimeout = Duration(seconds: 90);
   String? _token;
   String? _deviceId;
   Me? _me;
@@ -87,25 +87,6 @@ class ApiClient {
     return _me!;
   }
 
-  /// Demo-mode login: accepts anything, makes no network call, grants every permission so the
-  /// whole app is reachable. See lib/demo/demo_mode.dart — flip `kDemoMode` to false and this
-  /// path is simply never called; `login()` above (real backend) is unaffected either way.
-  Future<Me> loginDemo(String email) async {
-    await setToken('demo-token');
-    _me = Me(
-      id: 'demo-user',
-      email: email.isEmpty ? 'demo@lightskate.demo' : email,
-      fullName: 'Demo Staff',
-      role: 'OWNER',
-      permissions: MockBackend.allPermissionCodes.toSet(),
-      venueId: 'venue-demo',
-      deviceId: null,
-    );
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('ls.me', jsonEncode(_me!.toJson()));
-    return _me!;
-  }
-
   Future<void> logout() async {
     try {
       await post('/auth/logout');
@@ -140,45 +121,36 @@ class ApiClient {
   Future<dynamic> delete(String path) => _send('DELETE', path);
 
   Future<dynamic> _send(String method, String path, {Map<String, dynamic>? body, String? idempotencyKey}) async {
-    if (kDemoMode) {
-      // Tiny artificial delay so loading states/spinners are visible, same as a real request.
-      await Future.delayed(const Duration(milliseconds: 150));
-      final raw = MockBackend.instance.handle(method, path, body);
-      // Round-trip through JSON: MockBackend's hand-built map literals infer as Map<String,
-      // Object> (mixed-type values), not Map<String, dynamic> — a direct cast fails at runtime
-      // under dart2js. Encoding/decoding guarantees exactly the same shape jsonDecode(real HTTP
-      // body) would produce, which is what every model's fromJson() is actually written against.
-      final json = raw == null ? null : jsonDecode(jsonEncode(raw)) as Map<String, dynamic>;
-      if (json != null && json['serverTime'] is String) _syncClock(json['serverTime'] as String);
-      return json;
-    }
-    final headers = <String, String>{'content-type': 'application/json'};
+    // The server rejects a JSON content type with an empty body, so writes always carry a JSON object
+    // ('{}' when there is nothing to send) and reads/deletes carry no body and no content type.
+    final hasBody = method == 'POST' || method == 'PUT' || method == 'PATCH';
+    final headers = <String, String>{if (hasBody) 'content-type': 'application/json'};
     if (_token != null) headers['authorization'] = 'Bearer $_token';
     if (_deviceId != null) headers['x-device-id'] = _deviceId!;
     if (idempotencyKey != null) headers['idempotency-key'] = idempotencyKey;
 
     final uri = Uri.parse('$baseUrl/api/v1$path');
-    final encodedBody = body == null ? null : jsonEncode(body);
+    final encodedBody = hasBody ? jsonEncode(body ?? const <String, dynamic>{}) : null;
     http.Response res;
     try {
       switch (method) {
         case 'GET':
-          res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 20));
+          res = await http.get(uri, headers: headers).timeout(_timeout);
           break;
         case 'PATCH':
-          res = await http.patch(uri, headers: headers, body: encodedBody).timeout(const Duration(seconds: 20));
+          res = await http.patch(uri, headers: headers, body: encodedBody).timeout(_timeout);
           break;
         case 'PUT':
-          res = await http.put(uri, headers: headers, body: encodedBody).timeout(const Duration(seconds: 20));
+          res = await http.put(uri, headers: headers, body: encodedBody).timeout(_timeout);
           break;
         case 'DELETE':
-          res = await http.delete(uri, headers: headers).timeout(const Duration(seconds: 20));
+          res = await http.delete(uri, headers: headers).timeout(_timeout);
           break;
         default:
-          res = await http.post(uri, headers: headers, body: encodedBody).timeout(const Duration(seconds: 20));
+          res = await http.post(uri, headers: headers, body: encodedBody).timeout(_timeout);
       }
     } on TimeoutException {
-      throw ApiException(0, 'NETWORK', 'The server did not respond in time. Check the connection.');
+      throw ApiException(0, 'NETWORK', 'The server did not respond in time. It may be waking up — please try again in a moment.');
     } catch (_) {
       throw ApiException(0, 'NETWORK', 'Cannot reach the server. Check the connection.');
     }
@@ -200,25 +172,17 @@ class ApiClient {
 
   /// Fetches a protected photo's bytes with the auth header — never a public URL.
   Future<List<int>> photoBytes(String photoId) async {
-    if (kDemoMode) throw ApiException(404, 'NOT_FOUND', 'No photo in demo mode.');
     final headers = <String, String>{if (_token != null) 'authorization': 'Bearer $_token'};
-    final res = await http.get(Uri.parse('$baseUrl/api/v1/photos/$photoId/content'), headers: headers).timeout(const Duration(seconds: 20));
+    final res = await http.get(Uri.parse('$baseUrl/api/v1/photos/$photoId/content'), headers: headers).timeout(_timeout);
     if (res.statusCode != 200) throw ApiException(res.statusCode, 'PHOTO', 'Photo unavailable.');
     return res.bodyBytes;
   }
 
   /// Generic authenticated image fetch, for endpoints that serve a photo directly by path
   /// (e.g. a shoe claim's photo) rather than through the shared /photos/:id/content table.
-  /// In demo mode this returns whatever bytes MockBackend actually stored for that path — the
-  /// real camera/gallery photo the staff member just captured, not a placeholder.
   Future<List<int>> getBytes(String path) async {
-    if (kDemoMode) {
-      final bytes = MockBackend.instance.demoPhotoBytes(path);
-      if (bytes == null) throw ApiException(404, 'NOT_FOUND', 'No photo in demo mode.');
-      return bytes;
-    }
     final headers = <String, String>{if (_token != null) 'authorization': 'Bearer $_token'};
-    final res = await http.get(Uri.parse('$baseUrl/api/v1$path'), headers: headers).timeout(const Duration(seconds: 20));
+    final res = await http.get(Uri.parse('$baseUrl/api/v1$path'), headers: headers).timeout(_timeout);
     if (res.statusCode != 200) throw ApiException(res.statusCode, 'PHOTO', 'Photo unavailable.');
     return res.bodyBytes;
   }
@@ -226,19 +190,14 @@ class ApiClient {
   /// Uploads raw image bytes (not JSON/multipart — the backend reads the request body directly
   /// as the file). Used for customer photos, equipment maintenance photos, shoe claim photos.
   Future<Map<String, dynamic>> postRawImage(String path, List<int> bytes, {String contentType = 'image/jpeg'}) async {
-    if (kDemoMode) {
-      await Future.delayed(const Duration(milliseconds: 150));
-      final raw = MockBackend.instance.handle('POST', path, const {}, bytes: Uint8List.fromList(bytes));
-      return raw == null ? {} : jsonDecode(jsonEncode(raw)) as Map<String, dynamic>;
-    }
     final headers = <String, String>{'content-type': contentType, 'idempotency-key': newIdempotencyKey()};
     if (_token != null) headers['authorization'] = 'Bearer $_token';
     if (_deviceId != null) headers['x-device-id'] = _deviceId!;
     http.Response res;
     try {
-      res = await http.post(Uri.parse('$baseUrl/api/v1$path'), headers: headers, body: bytes).timeout(const Duration(seconds: 30));
+      res = await http.post(Uri.parse('$baseUrl/api/v1$path'), headers: headers, body: bytes).timeout(_uploadTimeout);
     } on TimeoutException {
-      throw ApiException(0, 'NETWORK', 'The server did not respond in time. Check the connection.');
+      throw ApiException(0, 'NETWORK', 'The server did not respond in time. It may be waking up — please try again in a moment.');
     } catch (_) {
       throw ApiException(0, 'NETWORK', 'Cannot reach the server. Check the connection.');
     }

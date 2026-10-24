@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'api_client.dart';
+import 'realtime_bus.dart';
 
 /// Mirrors web/src/realtime.ts's protocol and philosophy: realtime is a hint only, never a
 /// source of truth. Every event (and every reconnect) just triggers [onEvent] so the caller
@@ -63,10 +64,12 @@ class RealtimeClient {
           _backoffMs = 1000;
           onStatus?.call('live');
           onEvent(); // resync once on (re)connect, same as the web client
+          RealtimeBus.publish('RESYNC');
           _startPing();
           _startWatchdog();
         } else if (type == 'event') {
           onEvent();
+          RealtimeBus.publish((msg['event'] as String?) ?? 'UNKNOWN', msg);
         }
         // 'pong' needs no handling beyond resetting _lastMessageAt above.
       },

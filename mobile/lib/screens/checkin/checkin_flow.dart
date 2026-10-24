@@ -9,6 +9,7 @@ import '../../models/product.dart';
 import '../../models/waiver.dart';
 import '../../models/equipment.dart';
 import '../../models/session_detail.dart';
+import '../../models/loyalty.dart';
 import '../../theme.dart';
 import '../../widgets/authed_photo.dart';
 import '../../widgets/camera_capture.dart';
@@ -81,6 +82,9 @@ class _CheckInFlowState extends State<CheckInFlow> {
   // session/payment state (kept in sync via _refreshSession)
   String? _sessionId;
   SessionDetail? _session;
+
+  // loyalty rewards this customer can put towards the session (free session / 50% off)
+  List<LoyaltyReward> _sessionRewards = [];
 
   // start
   List<EquipmentItem> _availableEquipment = [];
@@ -642,6 +646,7 @@ class _CheckInFlowState extends State<CheckInFlow> {
         await _loadEquipment();
         setState(() => _step = _Step.start);
       } else {
+        await _loadSessionRewards();
         setState(() => _step = _Step.payment);
       }
     } on ApiException catch (e) {
@@ -652,6 +657,78 @@ class _CheckInFlowState extends State<CheckInFlow> {
   }
 
   // ---- step 6: payment -----------------------------------------------------------------------
+
+  Future<void> _loadSessionRewards() async {
+    _sessionRewards = [];
+    if (!(_api.me?.can('loyalty.redeem') ?? false) || _customerId == null) return;
+    try {
+      final json = await _api.get('/loyalty/customers/$_customerId') as Map<String, dynamic>;
+      _sessionRewards = LoyaltyOverview.fromJson(json).availableRewards.where((r) => r.needsSession).toList();
+    } catch (_) {
+      // Loyalty is optional for check-in; payment still works if this fails.
+    }
+  }
+
+  Future<void> _useReward(LoyaltyReward r) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Use ${r.label}?'),
+        content: Text('${r.description}\n\nReward code ${r.code ?? ''} · earned on the ${r.tierTitle}, card ${r.cardNumber ?? ''}, stamp ${r.position}.\n\nOnce applied it is marked as used for this session.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Not now')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Apply reward')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _api.post('/loyalty/rewards/${r.id}/redeem', {'sessionId': _sessionId});
+      await _refreshSession();
+      _sessionRewards = [];
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${r.label} applied.')));
+      if (_session!.status == 'READY') {
+        await _loadEquipment();
+        setState(() => _step = _Step.start);
+      }
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _rewardOffer() {
+    final s = _session!;
+    if (_sessionRewards.isEmpty || s.paidMinor > 0 || s.pendingMinor > 0 || s.discountMinor > 0) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.only(top: 14),
+      color: LsColors.greenSoft,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Row(children: [
+            Icon(Icons.card_giftcard, color: LsColors.green),
+            SizedBox(width: 8),
+            Expanded(child: Text('This customer has loyalty rewards', style: TextStyle(fontWeight: FontWeight.w700, color: LsColors.green))),
+          ]),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final r in _sessionRewards)
+              ActionChip(
+                avatar: Icon(r.type == 'free_session' ? Icons.celebration_outlined : Icons.percent, size: 18),
+                label: Text('Use ${r.label}'),
+                onPressed: _busy ? null : () => _useReward(r),
+              ),
+          ]),
+        ]),
+      ),
+    );
+  }
 
   String? _paymentMethod;
   final _referenceCtrl = TextEditingController();
@@ -684,6 +761,7 @@ class _CheckInFlowState extends State<CheckInFlow> {
               ]),
             ),
           ),
+          _rewardOffer(),
           if (due <= 0)
             const Padding(
               padding: EdgeInsets.only(top: 14),

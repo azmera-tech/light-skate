@@ -51,4 +51,5 @@ class Me {
 const managementPerms = [
   'reports.read', 'staff.manage', 'settings.manage', 'pricing.manage',
   'capacity.manage', 'audit.read', 'device.manage', 'dayclose.manage', 'equipment.manage',
+  'playstation.manage', 'playstation.reports', 'loyalty.correct',
 ];

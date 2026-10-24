@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>My Light Skate Card</title>
+  <style>
+    :root { --bg: #0e1116; --panel: #1b212b; --text: #f4f6f8; --muted: #a7b0bb; --green: #4ade80; --accent: #2747b0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 560px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 20px; margin: 4px 0 12px; }
+    .card { position: relative; width: 100%; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+    .card img { display: block; width: 100%; height: auto; }
+    .slot { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; }
+    .slot.stamp { border: 3px solid var(--ink); background: color-mix(in srgb, var(--stamp) 92%, transparent); color: var(--ink); font-weight: 900; font-size: clamp(14px, 6vw, 34px); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .slot.next { border: 3px solid var(--stamp); }
+    .slot.reward { border: 5px solid #12a150; }
+    .slot.reward.used { border-color: #666; background: rgba(0,0,0,.35); }
+    .slot .tag { position: absolute; bottom: -6%; left: 50%; transform: translateX(-50%); background: #12a150; color: #fff; font-weight: 900; font-size: clamp(8px, 2.2vw, 12px); padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
+    .slot.used .tag { background: #555; }
+    .name { position: absolute; color: var(--nameColor); font-weight: 800; font-style: italic; white-space: nowrap; overflow: hidden; font-size: clamp(11px, 3.6vw, 22px); transform: translateY(-50%); }
+    .vip { position: absolute; right: 2%; top: 2%; background: #d4a21a; color: #000; font-weight: 900; padding: 3px 10px; border-radius: 14px; font-size: clamp(9px, 2.6vw, 14px); }
+    .panel { background: var(--panel); border-radius: 12px; padding: 14px; margin-top: 14px; }
+    .muted { color: var(--muted); }
+    .bar { height: 8px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; margin-top: 8px; }
+    .bar > div { height: 100%; background: var(--accent); }
+    .pips { display: flex; gap: 6px; margin-top: 10px; }
+    .pip { width: 34px; height: 22px; border-radius: 5px; border: 1.5px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; }
+    .pip.done { background: var(--accent); }
+    ul { list-style: none; padding: 0; margin: 8px 0 0; }
+    li { padding: 10px 0; border-top: 1px solid rgba(255,255,255,.08); }
+    li:first-child { border-top: 0; }
+    .code { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 2px; color: var(--green); font-weight: 700; }
+    .err { text-align: center; padding: 40px 16px; }
+    footer { text-align: center; margin: 20px 0 8px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main id="app"><p class="muted">Loading your card…</p></main>
+  <script src="/loyalty/card.js"></script>
+</body>
+</html>
