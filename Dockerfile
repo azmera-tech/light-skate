@@ -28,4 +28,5 @@ VOLUME ["/var/lib/light-skate/storage"]
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://localhost:8080/api/v1/health || exit 1
 # Migrations run on every container start (idempotent — migrate.ts skips anything already applied),
 # so a fresh deploy always has the current schema before the server starts accepting traffic.
-CMD ["sh", "-c", "node dist/migrate.js && node dist/server.js"]
+# When PROVISION_PASSWORD is set, the venue and one account per role are created if missing (never reset).
+CMD ["sh", "-c", "node dist/migrate.js && { [ -z \"$PROVISION_PASSWORD\" ] || node dist/provision.js; } && node dist/server.js"]

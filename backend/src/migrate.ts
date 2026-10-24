@@ -36,7 +36,8 @@ export async function migrate(log: (m: string) => void = console.log): Promise<s
   return applied;
 }
 
-if (process.argv[1] && process.argv[1].endsWith('migrate.ts')) {
+// Runs when executed directly: `tsx src/migrate.ts` in development, `node dist/migrate.js` in the container.
+if (process.argv[1] && /migrate\.(ts|js)$/.test(process.argv[1])) {
   migrate()
     .then((a) => console.log(a.length ? `applied ${a.length} migration(s)` : 'database is up to date'))
     .catch((e) => {
