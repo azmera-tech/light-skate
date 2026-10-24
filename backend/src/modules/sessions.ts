@@ -18,6 +18,7 @@ import { formatMinor } from '../shared/money.js';
 import { localMinutesIn, localWeekdayIn } from '../shared/time.js';
 import { LATEST_PHOTO_SQL } from './photos.js';
 import { clock } from '../shared/clock.js';
+import * as loyalty from './loyalty.js';
 
 // ---------- helpers ----------
 
@@ -317,12 +318,13 @@ export async function endSession(ctx: Ctx, sessionId: string, input: { issuedAt?
   }, endedAt);
   const visitDone = await completeVisitIfDone(ctx, s.visit_id);
   if (visitDone) await recordSessionEvent(ctx, upd, 'VISIT_COMPLETED', { at: endedAt });
+  const loyaltyResult = await loyalty.onSessionEnded(ctx, upd);
   const outstanding = (await many<any>(ctx.db, `SELECT e.code FROM equipment_assignments ea JOIN equipment e ON e.id=ea.equipment_id WHERE ea.session_id=$1 AND ea.returned_at IS NULL ORDER BY e.code`, [s.id])).map((r) => r.code);
   await audit(ctx, { action: 'session.ended', entityType: 'session', entityId: s.id, after: { outcome: to, endedAt, equipmentOutstanding: outstanding }, reason: input.reason ?? null });
   await emit(ctx, 'SESSION_ENDED', 'session', s.id, { sessionId: s.id, outcome: to });
   const cap = await capacityEvent(ctx);
   if (visitDone) await emit(ctx, 'VISIT_COMPLETED', 'visit', s.visit_id, { visitId: s.visit_id });
-  return { ...toCamel(upd), equipmentOutstanding: outstanding, visitCompleted: visitDone, occupancy: cap.occupancy };
+  return { ...toCamel(upd), equipmentOutstanding: outstanding, visitCompleted: visitDone, occupancy: cap.occupancy, loyalty: loyaltyResult };
 }
 
 // ---------- cancel ----------
@@ -335,6 +337,7 @@ export async function cancelSession(ctx: Ctx, sessionId: string, input: { reason
   const upd = await transition(ctx, s, 'CANCELLED', 'be cancelled', 'SESSION_CANCELLED', {}, { reason: input.reason.trim() });
   await ctx.db.query(`UPDATE visits SET status='CANCELLED', closed_at=$2 WHERE id=$1 AND status='OPEN'
      AND NOT EXISTS (SELECT 1 FROM sessions x WHERE x.visit_id=$1 AND x.status NOT IN ('CANCELLED','NO_SHOW'))`, [s.visit_id, ctx.now]);
+  await loyalty.onSessionVoided(ctx, s.id, `Session cancelled: ${input.reason.trim()}`);
   const { paid } = await sessionNetPaid(ctx.db, s.id);
   await audit(ctx, { action: 'session.cancelled', entityType: 'session', entityId: s.id, reason: input.reason.trim(), after: { paidMinor: paid } });
   await emit(ctx, 'SESSION_CANCELLED', 'session', s.id, { sessionId: s.id });
@@ -488,6 +491,7 @@ export async function processSessionTimers(venueId: string, now: Date = clock.no
         const s = (await db.query('SELECT * FROM sessions WHERE id=$1 AND status=$2 FOR NO KEY UPDATE SKIP LOCKED', [id, 'READY'])).rows[0];
         if (!s) return;
         await transition(ctx, s, 'NO_SHOW', 'be marked no-show', 'SESSION_NO_SHOW', {}, { afterMinutes: settings.noShowMinutes });
+        await loyalty.onSessionVoided(ctx, s.id, 'Session marked no-show');
         await db.query(`UPDATE visits SET status='CANCELLED', closed_at=$2 WHERE id=$1 AND status='OPEN' AND NOT EXISTS (SELECT 1 FROM sessions x WHERE x.visit_id=$1 AND x.status NOT IN ('CANCELLED','NO_SHOW'))`, [s.visit_id, now]);
         await emit(ctx, 'SESSION_NO_SHOW', 'session', s.id, { sessionId: s.id });
         await audit(ctx, { action: 'session.no_show', entityType: 'session', entityId: s.id });

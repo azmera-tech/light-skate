@@ -35,10 +35,21 @@ export const PERMISSIONS: Record<string, string> = {
   'audit.read': 'View the audit log',
   'device.manage': 'Register and manage devices',
   'dayclose.manage': 'Close the day',
+  'loyalty.read': 'View customer loyalty cards, rewards and history',
+  'loyalty.stamp': 'Award loyalty stamps for verified paid skating sessions',
+  'loyalty.redeem': 'Validate and redeem loyalty rewards',
+  'loyalty.correct': 'Void loyalty stamps/rewards (audited corrections)',
+  'playstation.operate': 'Run PlayStation gaming sessions and record their payments',
+  'playstation.manage': 'Manage PlayStation consoles, packages, prices and settings',
+  'playstation.reports': 'View PlayStation reports, revenue and employee activity',
+  'playstation.refund': 'Refund PlayStation payments',
 };
 
 const ALL = Object.keys(PERMISSIONS);
 const not = (...x: string[]) => ALL.filter((p) => !x.includes(p));
+// The PlayStation business is its own module: only Owner/Admin and the dedicated PlayStation Manager role get it.
+const PLAYSTATION = ALL.filter((p) => p.startsWith('playstation.'));
+const LOYALTY_DESK = ['loyalty.read', 'loyalty.stamp', 'loyalty.redeem'];
 
 export const DEFAULT_ROLES: { code: string; name: string; permissions: string[] }[] = [
   { code: 'OWNER', name: 'Owner', permissions: ALL },
@@ -46,7 +57,7 @@ export const DEFAULT_ROLES: { code: string; name: string; permissions: string[] 
   {
     code: 'MANAGER',
     name: 'Manager',
-    permissions: not('staff.manage', 'settings.manage', 'customer.delete', 'pricing.manage'),
+    permissions: not('staff.manage', 'settings.manage', 'customer.delete', 'pricing.manage', ...PLAYSTATION),
   },
   {
     code: 'SUPERVISOR',
@@ -56,7 +67,7 @@ export const DEFAULT_ROLES: { code: string; name: string; permissions: string[] 
       'session.read', 'session.create', 'session.pause', 'session.extend', 'session.end', 'session.cancel',
       'session.correct', 'payment.create', 'payment.read', 'payment.discount', 'payment.refund',
       'equipment.read', 'equipment.assign', 'equipment.return', 'equipment.maintenance', 'equipment.cleaning',
-      'incident.create', 'incident.read', 'incident.manage', 'shoeclaim.manage',
+      'incident.create', 'incident.read', 'incident.manage', 'shoeclaim.manage', ...LOYALTY_DESK,
     ],
   },
   {
@@ -67,7 +78,7 @@ export const DEFAULT_ROLES: { code: string; name: string; permissions: string[] 
       'session.read', 'session.create', 'session.pause', 'session.extend', 'session.end', 'session.cancel',
       'payment.create', 'payment.read',
       'equipment.read', 'equipment.assign', 'equipment.return',
-      'incident.create', 'shoeclaim.manage',
+      'incident.create', 'shoeclaim.manage', ...LOYALTY_DESK,
     ],
   },
   {
@@ -78,5 +89,10 @@ export const DEFAULT_ROLES: { code: string; name: string; permissions: string[] 
       'equipment.read', 'equipment.assign', 'equipment.return', 'equipment.maintenance', 'equipment.cleaning',
       'incident.create', 'shoeclaim.manage',
     ],
+  },
+  {
+    code: 'PLAYSTATION_MANAGER',
+    name: 'PlayStation Manager',
+    permissions: ['playstation.operate'],
   },
 ];

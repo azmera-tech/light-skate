@@ -69,9 +69,11 @@ export async function resetStaffPassword(ctx: Ctx, id: string, password: string)
   if (password.length < config.auth.minPasswordLength) throw E.unprocessable('WEAK_PASSWORD', `Passwords must be at least ${config.auth.minPasswordLength} characters.`);
   const u = await lockOne<any>(ctx.db, 'SELECT id, role_id FROM users WHERE id=$1 AND venue_id=$2 FOR NO KEY UPDATE', [id, ctx.venueId], 'Staff member');
   await assertCanGrantRole(ctx, u.role_id);
-  await ctx.db.query('UPDATE users SET password_hash=$2, must_change_password=true, failed_login_count=0, locked_until=NULL, updated_at=$3 WHERE id=$1', [id, await hashPassword(password), ctx.now]);
-  await ctx.db.query('UPDATE auth_sessions SET revoked_at=$2 WHERE user_id=$1 AND revoked_at IS NULL', [id, ctx.now]);
-  await audit(ctx, { action: 'staff.password_reset', entityType: 'user', entityId: id });
+  const self = id === ctx.user!.id;
+  await ctx.db.query('UPDATE users SET password_hash=$2, must_change_password=$4, failed_login_count=0, locked_until=NULL, updated_at=$3 WHERE id=$1', [id, await hashPassword(password), ctx.now, !self]);
+  // Resetting your own password keeps the device you did it from signed in.
+  await ctx.db.query('UPDATE auth_sessions SET revoked_at=$2 WHERE user_id=$1 AND revoked_at IS NULL AND id IS DISTINCT FROM $3', [id, ctx.now, self ? ctx.user!.authSessionId : null]);
+  await audit(ctx, { action: 'staff.password_reset', entityType: 'user', entityId: id, after: { self } });
   return { id };
 }
 
@@ -96,8 +98,8 @@ export async function updateDevice(ctx: Ctx, id: string, patch: { status?: 'ACTI
 }
 
 // ---------- settings / capacity ----------
-export async function updateSettings(ctx: Ctx, patch: Record<string, unknown>) {
-  assertCan(ctx, 'settings.manage');
+export async function updateSettings(ctx: Ctx, patch: Record<string, unknown>, permission = 'settings.manage') {
+  assertCan(ctx, permission);
   const before = await getSettings(ctx.db, ctx.venueId);
   const changed: Record<string, { before: unknown; after: unknown }> = {};
   for (const [key, value] of Object.entries(patch)) {

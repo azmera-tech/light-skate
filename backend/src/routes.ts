@@ -10,7 +10,7 @@ import { rateLimit } from './shared/ratelimit.js';
 import type { Ctx } from './shared/ctx.js';
 import { can } from './shared/ctx.js';
 import { authenticate } from './app.js';
-import { login, logout, listRolesForVenue } from './auth/service.js';
+import { login, logout, listRolesForVenue, changeOwnPassword } from './auth/service.js';
 import { getSettings, getVenue } from './settings.js';
 import { getMaxCapacity } from './modules/capacity.js';
 import { storage } from './storage/index.js';
@@ -32,6 +32,7 @@ import * as admin from './modules/admin.js';
 import * as reports from './modules/reports.js';
 import * as dashboard from './modules/dashboard.js';
 import * as dayclose from './modules/dayclose.js';
+import * as loyalty from './modules/loyalty.js';
 import { normalizePhone } from './shared/phone.js';
 import { assertUuid } from './modules/util.js';
 
@@ -109,6 +110,12 @@ export function registerRoutes(app: FastifyInstance, hub: RealtimeHub) {
     rateLimit('login-ip', req.ip, 30, 60_000, 'Too many sign-in attempts from this device. Please wait a minute.');
     rateLimit('login', `${req.ip}:${body.email.toLowerCase()}`, 8, 60_000, 'Too many sign-in attempts. Please wait a minute and try again.');
     return login({ email: body.email, password: body.password, deviceId: body.deviceId, ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') });
+  });
+  app.post(`${P}/auth/change-password`, async (req) => {
+    const u = await authenticate(req);
+    rateLimit('password-change', u.id, 5, 60_000, 'Too many password change attempts. Please wait a minute.');
+    const body = parse(z.object({ currentPassword: z.string().min(1).max(200), newPassword: z.string().min(1).max(200) }), req.body);
+    return changeOwnPassword(u, body.currentPassword, body.newPassword, req.ip);
   });
   app.post(`${P}/auth/logout`, async (req) => { const u = await authenticate(req); await logout(u.authSessionId); return { ok: true }; });
   app.get(`${P}/auth/me`, async (req) => {
@@ -372,6 +379,37 @@ export function registerRoutes(app: FastifyInstance, hub: RealtimeHub) {
     const rec = await one<any>(pool, `SELECT photo_key, photo_mime FROM shoe_claims WHERE id=$1 AND venue_id=$2`, [idParam(req), user.venueId]);
     if (!rec) throw E.notFound('Photo');
     return sendImage(reply, { bytes: await storage.get(rec.photo_key), mime: rec.photo_mime });
+  });
+
+  // ---------------------------------------------------------------- loyalty
+  get('/loyalty/program', async () => loyalty.programDescription());
+  get('/loyalty/members', (ctx, req) => loyalty.listMembers(ctx, parse(z.object({ tier: z.enum(['STANDARD', 'GOLDEN', 'DIAMOND', 'LIGHT']).optional(), q: z.string().max(100).optional(), limit: z.coerce.number().int().min(1).max(500).optional() }), req.query)));
+  get('/loyalty/activity', (ctx, req) => loyalty.loyaltyActivity(ctx, parse(z.object({ limit: z.coerce.number().int().min(1).max(500).optional(), before: z.coerce.number().int().optional() }), req.query)));
+  get('/loyalty/customers/:id', (ctx, req) => loyalty.loyaltyOverview(ctx, idParam(req)));
+  get('/loyalty/customers/:id/eligible-sessions', (ctx, req) => loyalty.eligibleSessions(ctx, idParam(req)));
+  command('post', '/loyalty/customers/:id/stamps', { op: 'loyalty.stamp', perm: 'loyalty.stamp', idem: 'required', status: 201, body: z.object({ sessionId: uuid }) },
+    (ctx, b, req) => loyalty.awardStampManually(ctx, idParam(req), b.sessionId));
+  command('post', '/loyalty/customers/:id/card-link', { op: 'loyalty.card_link', perm: 'loyalty.read', body: z.object({ rotate: z.boolean().optional() }) },
+    (ctx, b, req) => loyalty.issueCardLink(ctx, idParam(req), !!b.rotate));
+  get('/loyalty/rewards/lookup', (ctx, req) => loyalty.validateReward(ctx, { code: parse(z.object({ code: z.string().trim().min(4).max(20) }), req.query).code }));
+  get('/loyalty/rewards/:id', (ctx, req) => loyalty.validateReward(ctx, { id: idParam(req) }));
+  command('post', '/loyalty/rewards/:id/redeem', { op: 'loyalty.redeem', perm: 'loyalty.redeem', idem: 'required', body: z.object({ sessionId: uuid.nullish(), note: z.string().max(300).nullish() }) },
+    (ctx, b, req) => loyalty.redeemReward(ctx, idParam(req), b));
+  command('post', '/loyalty/rewards/:id/void', { op: 'loyalty.reward_void', perm: 'loyalty.correct', body: z.object({ reason }) }, (ctx, b, req) => loyalty.voidReward(ctx, idParam(req), b.reason));
+  command('post', '/loyalty/stamps/:id/void', { op: 'loyalty.stamp_void', perm: 'loyalty.correct', body: z.object({ reason }) }, (ctx, b, req) => loyalty.voidStamp(ctx, idParam(req), b.reason));
+  // The customer's own read-only card, reached through the private link staff share with them. No sign-in.
+  app.get(`${P}/public/loyalty/:token`, async (req) => {
+    rateLimit('public-card', req.ip, 60, 60_000);
+    const token = parse(z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{20,64}$/) }), req.params).token;
+    const v = await loyalty.venueForCardToken(pool, token);
+    if (!v) throw E.notFound('Loyalty card');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const out = await loyalty.publicCard({ db: client, user: null, venueId: v.venue_id, deviceId: null, requestId: req.id, ip: req.ip ?? null, now: clock.now() }, token);
+      await client.query('COMMIT');
+      return out;
+    } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
   });
 
   // ---------------------------------------------------------------- dashboard / reports / close

@@ -233,6 +233,7 @@ export async function eraseCustomer(ctx: Ctx, id: string, reason: string) {
   for (const p of photos) await storage.delete(p.storage_key);
   await ctx.db.query(`UPDATE customer_photos SET status='DELETED', deleted_at=$2 WHERE customer_id=$1 AND status='ACTIVE'`, [id, ctx.now]);
   await ctx.db.query('DELETE FROM emergency_contacts WHERE customer_id=$1', [id]);
+  await ctx.db.query('UPDATE loyalty_accounts SET public_token=NULL, updated_at=$2 WHERE customer_id=$1', [id, ctx.now]);
   await ctx.db.query(`UPDATE waiver_acceptances SET signature_data=NULL, guardian_name=NULL, guardian_phone=NULL WHERE customer_id=$1`, [id]);
   await ctx.db.query(
     `UPDATE customers SET full_name='Erased customer', phone_e164=NULL, phone_raw=NULL, email=NULL, date_of_birth=NULL, notes=NULL,

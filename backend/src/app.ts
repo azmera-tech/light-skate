@@ -16,7 +16,7 @@ import { resolveToken, type AuthUser } from './auth/service.js';
 import { RealtimeHub } from './realtime/hub.js';
 import { registerRoutes } from './routes.js';
 import { startWorker } from './worker/index.js';
-import { ensurePermissions } from './bootstrap.js';
+import { ensurePermissions, syncDefaultRoles } from './bootstrap.js';
 import { migrate } from './migrate.js';
 
 declare module 'fastify' {
@@ -34,6 +34,7 @@ export interface BuiltApp {
 export async function buildApp(opts: { embeddedWorker?: boolean; runMigrations?: boolean } = {}): Promise<BuiltApp> {
   if (opts.runMigrations) await migrate(() => {});
   await ensurePermissions(pool);
+  await syncDefaultRoles(pool);
 
   const app = Fastify({
     logger: config.logLevel === 'silent' ? false : { level: config.logLevel, redact: ['req.headers.authorization'] },
@@ -127,6 +128,12 @@ export async function buildApp(opts: { embeddedWorker?: boolean; runMigrations?:
     return (reply as any).sendFile('index.html');
   }
   app.get('/', async (_req, reply) => serveSpa(reply));
+  // Customer-facing loyalty card (private link). Static page; its data comes from /api/v1/public/loyalty/:token.
+  app.get('/card/:token', async (_req, reply) => {
+    if (!spaIndex) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Not found.' } });
+    reply.header('Cache-Control', 'no-cache').header('Referrer-Policy', 'no-referrer').header('X-Robots-Tag', 'noindex');
+    return (reply as any).sendFile('loyalty/card.html');
+  });
 
   let stopWorker: (() => void) | null = null;
   await app.ready();

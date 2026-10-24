@@ -61,6 +61,28 @@ export const SETTING_SCHEMAS = {
       incidentAttachmentDays: z.number().int().min(1).nullable(),
     })
     .default({ profilePhotoDays: null, visitPhotoDays: 90, incidentAttachmentDays: 1825 }),
+  loyalty: z
+    .object({
+      enabled: z.boolean(),
+      /** Stamp automatically when staff end a paid skating session (the normal path). */
+      autoStampOnSessionEnd: z.boolean(),
+      /** Whether a session paid at 50% (via a loyalty reward) still earns a stamp. Free sessions never do. */
+      stampDiscountedSessions: z.boolean(),
+      /** false = one loyalty reward per skating session, and never on top of another discount. */
+      allowRewardStacking: z.boolean(),
+      /** Staff-verified stamping is limited to sessions that ended within this many days. */
+      manualAwardWindowDays: z.number().int().min(1).max(365),
+    })
+    .default({ enabled: true, autoStampOnSessionEnd: true, stampDiscountedSessions: true, allowRewardStacking: false, manualAwardWindowDays: 30 }),
+  playstation: z
+    .object({
+      /** Minutes before a timed gaming session ends at which the operator is warned. */
+      warningMinutes: z.number().int().min(1).max(60),
+      /** true = a gaming session cannot start until it is fully paid. */
+      requirePaymentBeforeStart: z.boolean(),
+      pauseEnabled: z.boolean(),
+    })
+    .default({ warningMinutes: 5, requirePaymentBeforeStart: true, pauseEnabled: true }),
   emergency: z
     .object({
       ambulance: z.string(), police: z.string(), fire: z.string(),

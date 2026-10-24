@@ -66,6 +66,22 @@ export async function login(args: { email: string; password: string; deviceId?: 
   return { token, expiresAt: expires.toISOString() };
 }
 
+/** Self-service password change. Other signed-in devices are signed out; this one stays signed in. */
+export async function changeOwnPassword(user: AuthUser, currentPassword: string, newPassword: string, ip?: string | null) {
+  const now = clock.now();
+  if (newPassword.length < config.auth.minPasswordLength) throw E.unprocessable('WEAK_PASSWORD', `Passwords must be at least ${config.auth.minPasswordLength} characters.`);
+  if (newPassword === currentPassword) throw E.unprocessable('PASSWORD_UNCHANGED', 'Choose a password different from your current one.');
+  const row = await one<{ password_hash: string }>(pool, 'SELECT password_hash FROM users WHERE id=$1', [user.id]);
+  if (!row || !(await verifyPassword(currentPassword, row.password_hash))) {
+    await writeLoginAudit(user.venueId, user.id, 'auth.password_change_failed', { reason: 'bad_current_password' }, ip);
+    throw new AppError(401, 'INVALID_CREDENTIALS', 'Your current password is incorrect.');
+  }
+  await pool.query('UPDATE users SET password_hash=$2, must_change_password=false, updated_at=$3 WHERE id=$1', [user.id, await hashPassword(newPassword), now]);
+  await pool.query('UPDATE auth_sessions SET revoked_at=$3 WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL', [user.id, user.authSessionId, now]);
+  await writeLoginAudit(user.venueId, user.id, 'auth.password_changed', {}, ip);
+  return { ok: true };
+}
+
 export async function logout(authSessionId: string) {
   await pool.query('UPDATE auth_sessions SET revoked_at = $2 WHERE id = $1', [authSessionId, clock.now()]);
 }

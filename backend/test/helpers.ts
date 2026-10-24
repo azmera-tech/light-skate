@@ -30,7 +30,7 @@ export async function makeWorld(opts: { capacity?: number; name?: string } = {})
   const app = built.app;
   const slug = 'v-' + randomUUID().slice(0, 8);
   const venueId = await createVenue(pool, { name: opts.name ?? 'Test Venue ' + slug, slug, capacity: opts.capacity ?? 60 });
-  const roles = ['OWNER', 'MANAGER', 'SUPERVISOR', 'FRONT_DESK', 'RENTAL_STAFF'];
+  const roles = ['OWNER', 'MANAGER', 'SUPERVISOR', 'FRONT_DESK', 'RENTAL_STAFF', 'PLAYSTATION_MANAGER'];
   const userIds: Record<string, string> = {};
   const tokens: Record<string, string> = {};
   const deviceIds: Record<string, string> = {};
@@ -48,8 +48,8 @@ export async function makeWorld(opts: { capacity?: number; name?: string } = {})
     if (res.statusCode !== 200) throw new Error('login failed in test setup: ' + res.body);
     tokens[key] = res.json().token;
   }
-  tokens.front = tokens.front_desk; tokens.rental = tokens.rental_staff;
-  userIds.front = userIds.front_desk; userIds.rental = userIds.rental_staff;
+  tokens.front = tokens.front_desk; tokens.rental = tokens.rental_staff; tokens.ps = tokens.playstation_manager;
+  userIds.front = userIds.front_desk; userIds.rental = userIds.rental_staff; userIds.ps = userIds.playstation_manager;
   const api: World['api'] = async (who, method, url, body, headers = {}) => {
     const h: Record<string, string> = { ...headers };
     if (tokens[who] || who.length > 30) h.authorization = `Bearer ${tokens[who] ?? who}`;

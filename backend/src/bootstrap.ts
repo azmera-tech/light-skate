@@ -8,6 +8,24 @@ export async function ensurePermissions(q: Queryable) {
   }
 }
 
+/**
+ * Roles are not editable in the app, so every venue's built-in roles are kept in step with DEFAULT_ROLES:
+ * missing roles are created and newly introduced permissions granted. Additive only — nothing is revoked.
+ */
+export async function syncDefaultRoles(q: Queryable) {
+  const venues = await q.query('SELECT id FROM venues');
+  for (const v of venues.rows) {
+    for (const r of DEFAULT_ROLES) {
+      await q.query('INSERT INTO roles (venue_id, code, name) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [v.id, r.code, r.name]);
+      const role = (await q.query('SELECT id FROM roles WHERE venue_id=$1 AND code=$2', [v.id, r.code])).rows[0];
+      if (!role) continue;
+      await q.query(
+        `INSERT INTO role_permissions (role_id, permission_code) SELECT $1, unnest($2::text[]) ON CONFLICT DO NOTHING`,
+        [role.id, r.permissions]);
+    }
+  }
+}
+
 export const DEFAULT_WAIVER_TITLE = 'Skating rules & release of liability';
 // TEMPLATE ONLY: venue owners must have this text reviewed by local legal counsel before use.
 export const DEFAULT_WAIVER_BODY = `SKATING RULES
