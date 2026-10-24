@@ -3,7 +3,7 @@
 A native Flutter client for the same Light Skate backend as the web app (`../backend`) — same API,
 same permissions, same database, same business rules. This is not a reskin of the web app; it's
 independent Dart/Flutter code, built against the documented REST API (`../docs/API.md`), and it's a
-full staff-operations client now, not a login-and-dashboard demo.
+full staff-operations client, always connected to the real backend (there is no demo mode).
 
 ## What's built
 
@@ -67,21 +67,24 @@ whole step (body + actions) rebuilds together.
   is plain Flutter with no platform-specific branches beyond the Android manifest, so it should build,
   but `flutter build ipa` has not actually been run.
 
-## Demo credentials
+## Accounts
 
-Same seeded venue as the web app (`npm run seed` from `backend/`), password `LightSkate-Demo-2026!`
-for every account:
+Production (`https://light-skate-api.onrender.com`) is provisioned with one test account per role, all sharing the
+password given to the venue owner. Change them (account menu → *Change my password*, or Admin → Staff → *Reset
+password*) before real customers are served.
 
 | Email | Role |
 | --- | --- |
-| `owner@lightskate.demo` | OWNER — every permission |
-| `manager@lightskate.demo` | MANAGER — everything except staff/settings/pricing/customer-delete |
-| `supervisor@lightskate.demo` | SUPERVISOR — front-desk + discounts/refunds/corrections/maintenance, no admin area |
-| `frontdesk@lightskate.demo` | FRONT_DESK — check-in, sessions, payments; no discounts/refunds/corrections |
-| `rental@lightskate.demo` | RENTAL_STAFF — equipment + incident reporting only, read-only elsewhere |
+| `lightskateowner@gmail.com` | OWNER — every permission |
+| `lightskateadmin@gmail.com` | ADMIN — every permission |
+| `lightskatemanager@gmail.com` | MANAGER — operations, reports, loyalty corrections; no staff/settings/pricing/PlayStation |
+| `lightskatesupervisor@gmail.com` | SUPERVISOR — front desk + discounts/refunds/corrections, loyalty stamp/redeem |
+| `lightskatefrontdesk@gmail.com` | FRONT_DESK — check-in, sessions, payments, loyalty stamp/redeem |
+| `lightskaterental@gmail.com` | RENTAL_STAFF — equipment, cleaning, shoe shelf, incident reporting |
+| `lightskateplaystation@gmail.com` | PLAYSTATION_MANAGER — PlayStation gaming operations only |
 
-Sign in as different roles to see the bottom nav, admin icon, and in-screen action buttons change —
-every gate is a permission check against `/auth/me`'s `permissions` array, not a role-name switch.
+Every gate is a permission check against `/auth/me`'s `permissions` array, not a role-name switch. For local
+development, `npm run seed` (in `backend/`) creates a separate fake venue with `*@lightskate.demo` accounts.
 
 ## Running it
 

@@ -22,7 +22,8 @@ npm run dev:api                        # API + embedded worker on :8080
 npm run dev:web                        # Vite on :5173 (proxies /api and the WebSocket)
 ```
 Demo logins (`*@lightskate.demo`, password from `DEMO_PASSWORD`, default `LightSkate-Demo-2026!`):
-`owner`, `manager`, `supervisor`, `frontdesk`, `rental`. **Never run the seed in production.**
+`owner`, `manager`, `supervisor`, `frontdesk`, `rental`. **Never run the seed in production** (it refuses to when
+`NODE_ENV=production`); use `PROVISION_PASSWORD=... npm run provision` there to create the real venue and staff accounts.
 
 If you'd rather set variables in the shell instead of a file: bash/macOS/Linux uses `export NAME=value`; **PowerShell
 uses `$env:NAME = "value"`** (not `export` — that's bash-only and will error as "term not recognized"). Either way,

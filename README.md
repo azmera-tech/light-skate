@@ -10,7 +10,19 @@ app is a fast, touch-friendly view on top of them.
   roles, reports (daily/range, CSV), pricing, capacity & policies, devices, close-day, audit log.
 * **Flutter mobile app** (`mobile/`): a native client against the same API, covering the full staff workflow —
   check-in, sessions, customers, equipment, incidents, history, and admin; see
-  [mobile/README.md](mobile/README.md) for scope, demo credentials, and how to get a real `.apk`.
+  [mobile/README.md](mobile/README.md) for scope, accounts, and how to get a real `.apk`.
+* **Tiered loyalty cards** (Standard → Golden → Diamond → Light): a stamp per paid skating session, awarded when the
+  session ends; rewards (50% OFF, free sessions, free burger) redeemed by staff; the customer follows their card through a
+  private QR link (`/card/<token>`). Rules live in `backend/src/modules/loyalty-config.ts`.
+* **PlayStation gaming**: consoles, admin-priced time and per-game packages, timed/per-game sessions with server-side
+  countdowns, payments/refunds and reports, run by the dedicated *PlayStation Manager* role.
+
+## Production
+
+Hosted on Render (`https://light-skate-api.onrender.com`, Docker, auto-deploys this branch) with Supabase Postgres +
+Storage. Each container start applies pending migrations; with `PROVISION_PASSWORD` set it also creates the
+"Light Skate" venue and one account per role if missing (`backend/src/provision.ts`, never overwrites passwords).
+No demo data is ever loaded there — `npm run seed` refuses to run with `NODE_ENV=production`.
 
 ## Quick start
 
@@ -23,7 +35,7 @@ anything that gives you a `postgres://` connection string).
    DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/lightskate
    ```
    It's loaded automatically — no `export`/`$env:` needed, and this step is identical on Windows, macOS and Linux.
-3. `npm run migrate` then `npm run seed` (clearly-fake demo venue: owner/manager/supervisor/frontdesk/rental `@lightskate.demo`)
+3. `npm run migrate` then `npm run seed` (local development only: clearly-fake demo venue, `@lightskate.demo` accounts)
 4. `npm run build` then `npm start` → http://localhost:8080
    (development instead: `npm run dev:api` and, in a second terminal, `npm run dev:web` → http://localhost:5173)
 
@@ -34,7 +46,7 @@ and PowerShell-specific notes. Full details: [docs/DEPLOYMENT.md](docs/DEPLOYMEN
 ## Tests
 
 ```bash
-npm test                 # 122 backend tests (real PostgreSQL) + 15 frontend unit tests
+npm test                 # 152 backend tests (real PostgreSQL) + 15 frontend unit tests
 npm run typecheck
 npm run build && npm run e2e   # 32 browser checks: real server + DB + Chromium (fake camera), two "tablets"
 ```
