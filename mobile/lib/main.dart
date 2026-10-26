@@ -1,11 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'api/api_client.dart';
 import 'screens/login_screen.dart';
 import 'app_shell.dart';
 import 'theme.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Draw edge-to-edge on every Android version and let each screen respect the system-bar insets itself
+  // (SafeArea / viewPadding / viewInsets), so gesture bars and 3-button navigation never cover a button.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(systemNavigationBarColor: Colors.transparent, systemNavigationBarContrastEnforced: false, statusBarColor: Colors.transparent));
   FlutterError.onError = (details) {
     debugPrint('[FlutterError] ${details.exceptionAsString()}\n${details.stack}');
   };

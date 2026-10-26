@@ -5,6 +5,8 @@ import '../../models/playstation.dart';
 import '../../theme.dart';
 import 'ps_dashboard_screen.dart';
 import 'ps_history_screen.dart';
+import 'ps_verification_screen.dart';
+import '../../widgets/ps_sheet.dart';
 
 /// Admin → PlayStation: the management module. Each tab is gated by its own permission; the server
 /// enforces the same rules on every request.
@@ -23,6 +25,7 @@ class PsAdminScreen extends StatelessWidget {
           if (me.can('playstation.operate')) ('Live sessions', const PsDashboardScreen(showHistoryButton: false)),
           if (me.can('playstation.manage')) ('Pricing & packages', const _PackagesTab()),
           if (me.can('playstation.manage')) ('Consoles', const _ConsolesTab()),
+          if (me.can('playstation.verify')) ('Payments', const PsVerificationScreen()),
           ('Session history', const PsHistoryScreen()),
           if (me.can('playstation.reports')) ('Reports', const _ReportsTab()),
           if (me.can('playstation.manage')) ('Settings', const _SettingsTab()),
@@ -535,10 +538,14 @@ class _SettingsTab extends StatefulWidget {
 
 class _SettingsTabState extends State<_SettingsTab> {
   int _warn = 5;
-  bool _requirePay = true;
   bool _pause = true;
+  bool _verifyNonCash = true;
+  bool _selfVerify = false;
+  Set<String> _proofMethods = {};
+  List<Map<String, dynamic>> _methods = [];
   bool _loaded = false;
   bool _busy = false;
+  String? _error;
 
   @override
   void initState() {
@@ -547,16 +554,22 @@ class _SettingsTabState extends State<_SettingsTab> {
   }
 
   Future<void> _load() async {
-    final api = await ApiClient.instance();
-    final j = await api.get('/playstation/settings') as Map<String, dynamic>;
-    final s = (j['settings'] as Map).cast<String, dynamic>();
-    if (mounted) {
+    try {
+      final api = await ApiClient.instance();
+      final j = await api.get('/playstation/settings') as Map<String, dynamic>;
+      final s = (j['settings'] as Map).cast<String, dynamic>();
+      if (!mounted) return;
       setState(() {
         _warn = (s['warningMinutes'] as num).toInt();
-        _requirePay = s['requirePaymentBeforeStart'] == true;
         _pause = s['pauseEnabled'] == true;
+        _verifyNonCash = s['verifyNonCash'] != false;
+        _selfVerify = s['allowSelfVerification'] == true;
+        _proofMethods = ((s['proofRequiredMethods'] as List?) ?? const []).cast<String>().toSet();
+        _methods = ((j['paymentMethods'] as List?) ?? const []).cast<Map<String, dynamic>>().where((m) => m['code'] != 'CASH').toList();
         _loaded = true;
       });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
     }
   }
 
@@ -564,7 +577,13 @@ class _SettingsTabState extends State<_SettingsTab> {
     setState(() => _busy = true);
     try {
       final api = await ApiClient.instance();
-      await api.put('/playstation/settings', {'warningMinutes': _warn, 'requirePaymentBeforeStart': _requirePay, 'pauseEnabled': _pause});
+      await api.put('/playstation/settings', {
+        'warningMinutes': _warn,
+        'pauseEnabled': _pause,
+        'verifyNonCash': _verifyNonCash,
+        'proofRequiredMethods': _proofMethods.toList(),
+        'allowSelfVerification': _selfVerify,
+      });
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PlayStation settings saved.')));
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -575,8 +594,8 @@ class _SettingsTabState extends State<_SettingsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_loaded) return const Center(child: CircularProgressIndicator());
-    return ListView(padding: const EdgeInsets.all(12), children: [
+    if (!_loaded) return Center(child: _error != null ? Text(_error!, style: const TextStyle(color: LsColors.red)) : const CircularProgressIndicator());
+    return ListView(padding: scrollPadding(context, h: 12, top: 12), children: [
       ListTile(
         contentPadding: EdgeInsets.zero,
         title: const Text('Warn the operator before a timed session ends'),
@@ -588,17 +607,38 @@ class _SettingsTabState extends State<_SettingsTab> {
       ),
       SwitchListTile(
         contentPadding: EdgeInsets.zero,
-        value: _requirePay,
-        onChanged: (v) => setState(() => _requirePay = v),
-        title: const Text('Require full payment before a session starts'),
-        subtitle: const Text('When off, operators can start first and take payment later (outstanding amounts show as unpaid).'),
-      ),
-      SwitchListTile(
-        contentPadding: EdgeInsets.zero,
         value: _pause,
         onChanged: (v) => setState(() => _pause = v),
         title: const Text('Allow pausing sessions'),
         subtitle: const Text('Paused time is not charged: the countdown freezes and the end time moves out by the pause length.'),
+      ),
+      const Divider(height: 28),
+      Text('Payment verification', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 4),
+      const Text('Sessions are played first and paid at checkout. Cash is counted when received; other methods can wait for an admin to check them.', style: TextStyle(color: LsColors.muted)),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _verifyNonCash,
+        onChanged: (v) => setState(() => _verifyNonCash = v),
+        title: const Text('Non-cash payments need admin verification'),
+        subtitle: const Text('Until verified they show as "Pending verification" and do not reduce the balance owed.'),
+      ),
+      const SizedBox(height: 4),
+      const Text('Evidence image required for', style: TextStyle(fontWeight: FontWeight.w700)),
+      Wrap(spacing: 8, children: [
+        for (final m in _methods)
+          FilterChip(
+            label: Text(m['label'] as String? ?? m['code'] as String),
+            selected: _proofMethods.contains(m['code']),
+            onSelected: (v) => setState(() => v ? _proofMethods.add(m['code'] as String) : _proofMethods.remove(m['code'])),
+          ),
+      ]),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _selfVerify,
+        onChanged: (v) => setState(() => _selfVerify = v),
+        title: const Text('Let an admin verify a payment they recorded themselves'),
+        subtitle: const Text('Off by default: the person who took a payment cannot also approve it.'),
       ),
       const SizedBox(height: 12),
       ElevatedButton(onPressed: _busy ? null : _save, child: Text(_busy ? 'Saving…' : 'Save settings')),
@@ -607,4 +647,3 @@ class _SettingsTabState extends State<_SettingsTab> {
     ]);
   }
 }
-

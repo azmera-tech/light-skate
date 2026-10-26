@@ -14,8 +14,13 @@ app is a fast, touch-friendly view on top of them.
 * **Tiered loyalty cards** (Standard → Golden → Diamond → Light): a stamp per paid skating session, awarded when the
   session ends; rewards (50% OFF, free sessions, free burger) redeemed by staff; the customer follows their card through a
   private QR link (`/card/<token>`). Rules live in `backend/src/modules/loyalty-config.ts`.
-* **PlayStation gaming**: consoles, admin-priced time and per-game packages, timed/per-game sessions with server-side
-  countdowns, payments/refunds and reports, run by the dedicated *PlayStation Manager* role.
+* **PlayStation gaming**: consoles, admin-priced time and per-game packages, run by the dedicated *PlayStation Manager*
+  role. **Play first, pay after**: a session starts unpaid; each game is one tap on **+ Add Game** (server-side atomic,
+  price snapshotted at start); **End Session** is separate from **Checkout**, where cash is counted at once and
+  Bank/Telebirr/Card payments carry a reference + evidence image and stay *Pending verification* until an admin with
+  `playstation.verify` verifies or rejects them (never the person who recorded it). Evidence is private and served only
+  through an authenticated endpoint; every verify/reject/correction/refund is audited. Settings: Admin → PlayStation →
+  Settings (verification on/off, which methods require evidence, self-verification).
 
 ## Production
 

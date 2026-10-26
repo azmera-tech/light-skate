@@ -4,6 +4,7 @@ import '../../format.dart';
 import '../../models/me.dart';
 import '../../models/playstation.dart';
 import '../../theme.dart';
+import '../../widgets/ps_sheet.dart';
 import 'ps_session_screen.dart';
 
 /// Gaming session history with filters. Operators can narrow to their own sessions; staff who
@@ -24,6 +25,7 @@ class _PsHistoryScreenState extends State<PsHistoryScreen> {
   String? _packageId;
   String? _operatorId;
   bool _mine = false;
+  bool _outstanding = false;
   List<PsConsole> _consoles = [];
   List<PsPackage> _packages = [];
   List<Map<String, dynamic>> _staff = [];
@@ -66,6 +68,7 @@ class _PsHistoryScreenState extends State<PsHistoryScreen> {
       if (_packageId != null) 'packageId=$_packageId',
       if (_operatorId != null) 'operatorId=$_operatorId',
       if (_mine) 'mine=true',
+      if (_outstanding) 'outstanding=true',
     ];
     try {
       final r = await _api.get('/playstation/sessions?${q.join('&')}') as Map<String, dynamic>;
@@ -113,10 +116,10 @@ class _PsHistoryScreenState extends State<PsHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final collected = _rows.fold<int>(0, (a, r) => a + ((r['paidMinor'] as num?)?.toInt() ?? 0));
+    final collected = _rows.fold<int>(0, (a, r) => a + ((r['settledMinor'] as num?)?.toInt() ?? 0));
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(padding: const EdgeInsets.all(12), children: [
+      child: ListView(padding: scrollPadding(context, h: 12, top: 12), children: [
         Row(children: [
           Expanded(
             child: OutlinedButton.icon(
@@ -127,6 +130,8 @@ class _PsHistoryScreenState extends State<PsHistoryScreen> {
           ),
           const SizedBox(width: 8),
           FilterChip(label: const Text('Mine'), selected: _mine, onSelected: (v) { setState(() => _mine = v); _load(); }),
+          const SizedBox(width: 6),
+          FilterChip(label: const Text('Owing'), selected: _outstanding, onSelected: (v) { setState(() => _outstanding = v); _load(); }),
         ]),
         const SizedBox(height: 10),
         Wrap(children: [
@@ -150,13 +155,13 @@ class _PsHistoryScreenState extends State<PsHistoryScreen> {
                 '${r['sessionNumber']} · ${r['packages'] ?? ''}',
                 '${psStatusLabel[r['status']] ?? r['status']} · ${psPaymentLabel[r['paymentStatus']] ?? r['paymentStatus']}',
                 '${fmtHHMM(DateTime.tryParse(r['startedAt'] as String? ?? r['createdAt'] as String? ?? '')?.toLocal())}–${fmtHHMM(DateTime.tryParse(r['endedAt'] as String? ?? '')?.toLocal())}'
-                    '${r['pricingType'] == 'DURATION' ? ' · played ${formatDuration((r['playedSeconds'] as num? ?? 0).toInt())}' : ' · ${r['gamesCompleted']}/${r['gamesPurchased']} games'}'
+                    '${r['pricingType'] == 'DURATION' ? ' · played ${formatDuration((r['playedSeconds'] as num? ?? 0).toInt())}' : ' · ${r['gamesPurchased']} games'}'
                     '${r['operatorName'] != null ? ' · ${r['operatorName']}' : ''}',
               ].join('\n')),
               isThreeLine: true,
               trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text(formatMoney((r['totalMinor'] as num).toInt(), 'ETB'), style: const TextStyle(fontWeight: FontWeight.w800)),
-                if ((r['paidMinor'] as num) != (r['totalMinor'] as num)) Text('paid ${formatMoney((r['paidMinor'] as num).toInt(), 'ETB')}', style: const TextStyle(fontSize: 11, color: LsColors.red)),
+                if ((r['balanceMinor'] as num? ?? 0) > 0) Text('owes ${formatMoney((r['balanceMinor'] as num).toInt(), 'ETB')}', style: const TextStyle(fontSize: 11, color: LsColors.red, fontWeight: FontWeight.w700)),
               ]),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PsSessionScreen(sessionId: r['id'] as String))).then((_) => _load()),
             ),
