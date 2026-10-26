@@ -43,6 +43,7 @@ export const PERMISSIONS: Record<string, string> = {
   'playstation.manage': 'Manage PlayStation consoles, packages, prices and settings',
   'playstation.reports': 'View PlayStation reports, revenue and employee activity',
   'playstation.refund': 'Refund PlayStation payments',
+  'playstation.verify': 'Verify or reject PlayStation payments and review their evidence',
 };
 
 const ALL = Object.keys(PERMISSIONS);

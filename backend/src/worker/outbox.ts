@@ -30,7 +30,7 @@ const RESOLVES: Record<string, string[]> = {
 };
 
 // Fields that may travel over the realtime channel. Deliberately no names, phones, photos or money.
-const SAFE_FIELDS = ['sessionId', 'customerId', 'equipmentId', 'visitId', 'paymentId', 'incidentId', 'status', 'occupancy', 'max', 'scheduledEndAt', 'startedAt', 'minutes', 'level', 'code', 'outcome', 'keys', 'notificationId', 'severity'];
+const SAFE_FIELDS = ['sessionId', 'customerId', 'equipmentId', 'visitId', 'paymentId', 'incidentId', 'status', 'occupancy', 'max', 'scheduledEndAt', 'startedAt', 'minutes', 'level', 'code', 'outcome', 'keys', 'notificationId', 'severity', 'consoleCode', 'remainingSeconds', 'recordedBy'];
 
 /** Test seam: lets failure-recovery tests simulate a downstream (notification/realtime) outage. */
 export const outboxHooks: { beforeDispatch?: (e: { id: number; event_type: string }) => void } = {};

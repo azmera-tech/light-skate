@@ -81,7 +81,7 @@ class SupabaseDriver implements StorageDriver {
 export const storage: StorageDriver = config.storage.driver === 'supabase' ? new SupabaseDriver() : new LocalDriver();
 
 /** Server-generated storage key. User-provided names are never used. */
-export function newStorageKey(venueId: string, kind: 'customer' | 'incident' | 'maintenance' | 'shoe', ext: string) {
+export function newStorageKey(venueId: string, kind: 'customer' | 'incident' | 'maintenance' | 'shoe' | 'psproof', ext: string) {
   return `${venueId}/${kind}/${randomUUID()}.${ext}`;
 }
 

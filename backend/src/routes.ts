@@ -414,7 +414,10 @@ export function registerRoutes(app: FastifyInstance, hub: RealtimeHub) {
   });
 
   // ---------------------------------------------------------------- PlayStation gaming
-  const payBody = z.object({ method: z.string().max(24), reference: z.string().trim().max(100).nullish(), confirmed: z.boolean().optional(), note: z.string().max(300).nullish() });
+  const psPay = z.object({
+    amountMinor: z.number().int().positive().max(100_000_000), method: z.string().max(24), reference: z.string().trim().max(100).nullish(),
+    tenderedMinor: z.number().int().positive().max(100_000_000).nullish(), note: z.string().max(300).nullish(),
+  });
   const psPackageBody = z.object({
     name: z.string().trim().min(1).max(60), description: z.string().max(300).nullish(), pricingType: z.enum(['DURATION', 'PER_GAME']),
     durationMinutes: z.number().int().min(1).max(1440).nullish(), gamesPerUnit: z.number().int().min(1).max(100).nullish(), gameLabel: z.string().trim().max(40).nullish(),
@@ -433,29 +436,69 @@ export function registerRoutes(app: FastifyInstance, hub: RealtimeHub) {
     from: dateStr.optional(), to: dateStr.optional(), consoleId: uuid.optional(), operatorId: uuid.optional(), packageId: uuid.optional(),
     status: z.enum(['PENDING_PAYMENT', 'READY', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED']).optional(),
     paymentStatus: z.enum(['UNPAID', 'PENDING', 'PARTIALLY_PAID', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED']).optional(),
-    mine: z.enum(['true', 'false']).optional(), limit: z.coerce.number().int().min(1).max(500).optional(), offset: z.coerce.number().int().min(0).optional(),
-  }).transform((q) => ({ ...q, mine: q.mine === 'true' })), req.query)));
+    mine: z.enum(['true', 'false']).optional(), outstanding: z.enum(['true', 'false']).optional(), limit: z.coerce.number().int().min(1).max(500).optional(), offset: z.coerce.number().int().min(0).optional(),
+  }).transform((q) => ({ ...q, mine: q.mine === 'true', outstanding: q.outstanding === 'true' })), req.query)));
   get('/playstation/sessions/:id', (ctx, req) => ps.getGamingSession(ctx, idParam(req)));
+  // Post-paid: a session starts immediately and unpaid; quantity is the initial billable count (0 is allowed for per-game).
   command('post', '/playstation/sessions', { op: 'ps.session_create', perm: 'playstation.operate', idem: 'required', status: 201,
-    body: z.object({ consoleId: uuid, packageId: uuid, quantity: z.number().int().min(1).max(50).optional(), customerId: uuid.nullish(), walkInName: z.string().trim().max(120).nullish(),
-      walkInPhone: z.string().trim().max(30).nullish(), notes: z.string().max(500).nullish(), payment: payBody.extend({ amountMinor: z.number().int().positive().optional() }).nullish() }) },
+    body: z.object({ consoleId: uuid, packageId: uuid, quantity: z.number().int().min(0).max(50).optional(), customerId: uuid.nullish(), walkInName: z.string().trim().max(120).nullish(),
+      walkInPhone: z.string().trim().max(30).nullish(), notes: z.string().max(500).nullish() }) },
     (ctx, b) => ps.createGamingSession(ctx, b));
-  command('post', '/playstation/sessions/:id/payments', { op: 'ps.payment', perm: 'playstation.operate', idem: 'required', status: 201, body: payBody.extend({ amountMinor: z.number().int().positive().max(100_000_000) }) },
+  command('post', '/playstation/sessions/:id/games', { op: 'ps.games', perm: 'playstation.operate', idem: 'required', rate: ['ps-games', 240, 60_000],
+    body: z.object({ delta: z.number().int().min(-50).max(50), reason: z.string().trim().max(300).nullish() }) },
+    (ctx, b, req) => ps.adjustGames(ctx, idParam(req), b));
+  command('post', '/playstation/sessions/:id/payments', { op: 'ps.payment', perm: 'playstation.operate', idem: 'required', status: 201, body: psPay },
     (ctx, b, req) => ps.recordPayment(ctx, idParam(req), b));
+  // Same, with the payment evidence photo/screenshot as the raw request body (payment + evidence commit together).
+  app.post(`${P}/playstation/sessions/:id/payments/with-proof`, async (req, reply) => {
+    await authenticate(req);
+    rateLimit('upload', req.auth!.id, 20, 60_000, 'Too many uploads. Please wait a moment.');
+    const q = parse(z.object({
+      amountMinor: z.coerce.number().int().positive().max(100_000_000), method: z.string().max(24), reference: z.string().trim().max(100).optional(),
+      tenderedMinor: z.coerce.number().int().positive().max(100_000_000).optional(), note: z.string().max(300).optional(),
+    }), req.query);
+    const bytes = req.body as Buffer;
+    if (!Buffer.isBuffer(bytes)) throw E.badRequest('IMAGE_REQUIRED', 'Send the payment photo or screenshot as a JPEG, PNG or WebP image body.');
+    const id = idParam(req); const written = { keys: [] as string[] };
+    try {
+      const r = await execute(metaOf(req), { operation: 'ps.payment_proof', permission: 'playstation.operate', idempotency: 'required', successStatus: 201 },
+        { id, q, sha: createHash('sha256').update(bytes).digest('hex') }, (ctx) => ps.recordPayment(ctx, id, q, bytes, written));
+      reply.status(r.status); return r.body;
+    } catch (e) { for (const k of written.keys) await storage.delete(k).catch(() => {}); throw e; }
+  });
+  app.post(`${P}/playstation/payments/:id/proof`, async (req, reply) => {
+    await authenticate(req);
+    rateLimit('upload', req.auth!.id, 20, 60_000, 'Too many uploads. Please wait a moment.');
+    const bytes = req.body as Buffer;
+    if (!Buffer.isBuffer(bytes)) throw E.badRequest('IMAGE_REQUIRED', 'Send the payment photo or screenshot as a JPEG, PNG or WebP image body.');
+    const id = idParam(req); const written = { keys: [] as string[] };
+    try {
+      const r = await execute(metaOf(req), { operation: 'ps.proof_add', permission: 'playstation.operate', idempotency: 'optional', successStatus: 201 },
+        { id, sha: createHash('sha256').update(bytes).digest('hex') }, (ctx) => ps.attachProof(ctx, id, bytes, written));
+      reply.status(r.status); return r.body;
+    } catch (e) { for (const k of written.keys) await storage.delete(k).catch(() => {}); throw e; }
+  });
+  app.get(`${P}/playstation/payments/:id/proof`, async (req, reply) => {
+    await authenticate(req);
+    rateLimit('proof', req.auth!.id, 300, 60_000);
+    // A transactional runner (not the read-only snapshot): viewing payment evidence is itself audited.
+    const r = await execute(metaOf(req), { operation: 'ps.proof_view', idempotency: 'none' }, { id: idParam(req) }, (ctx) => ps.loadProof(ctx, idParam(req)));
+    return sendImage(reply, r.body as { bytes: Buffer; mime: string }, 'private, no-store');
+  });
+  get('/playstation/payments', (ctx, req) => ps.reviewQueue(ctx, parse(z.object({ status: z.enum(['PENDING', 'PAID', 'REJECTED']).optional(), limit: z.coerce.number().int().min(1).max(300).optional() }), req.query)));
+  command('post', '/playstation/payments/:id/verify', { op: 'ps.payment_verify', perm: 'playstation.verify', idem: 'required', body: z.object({ reference: z.string().max(100).nullish() }) },
+    (ctx, b, req) => ps.verifyPayment(ctx, idParam(req), b.reference));
+  command('post', '/playstation/payments/:id/reject', { op: 'ps.payment_reject', perm: 'playstation.verify', idem: 'required', body: z.object({ reason }) },
+    (ctx, b, req) => ps.rejectPayment(ctx, idParam(req), b.reason));
+  command('post', '/playstation/payments/:id/cancel', { op: 'ps.payment_cancel', perm: 'playstation.operate' }, (ctx, _b, req) => ps.cancelPendingPayment(ctx, idParam(req)));
   command('post', '/playstation/sessions/:id/start', { op: 'ps.start', perm: 'playstation.operate', idem: 'required' }, (ctx, _b, req) => ps.startGamingSession(ctx, idParam(req)));
   command('post', '/playstation/sessions/:id/pause', { op: 'ps.pause', perm: 'playstation.operate', body: z.object({ reason: z.string().max(300).nullish() }) }, (ctx, b, req) => ps.pauseGamingSession(ctx, idParam(req), b.reason));
   command('post', '/playstation/sessions/:id/resume', { op: 'ps.resume', perm: 'playstation.operate' }, (ctx, _b, req) => ps.resumeGamingSession(ctx, idParam(req)));
-  command('post', '/playstation/sessions/:id/extend', { op: 'ps.extend', perm: 'playstation.operate', idem: 'required', body: z.object({ packageId: uuid, quantity: z.number().int().min(1).max(50).optional(), payment: payBody }) },
+  command('post', '/playstation/sessions/:id/extend', { op: 'ps.extend', perm: 'playstation.operate', idem: 'required', body: z.object({ packageId: uuid, quantity: z.number().int().min(1).max(50).optional() }) },
     (ctx, b, req) => ps.extendGamingSession(ctx, idParam(req), b));
-  command('post', '/playstation/sessions/:id/games-complete', { op: 'ps.games_complete', perm: 'playstation.operate', idem: 'required', body: z.object({ count: z.number().int().min(1).max(50).optional() }) },
-    (ctx, b, req) => ps.completeGames(ctx, idParam(req), b.count ?? 1));
   command('post', '/playstation/sessions/:id/finish', { op: 'ps.finish', perm: 'playstation.operate', idem: 'required', body: z.object({ reason: z.string().max(300).nullish() }) },
     (ctx, b, req) => ps.finishGamingSession(ctx, idParam(req), b));
   command('post', '/playstation/sessions/:id/cancel', { op: 'ps.cancel', perm: 'playstation.operate', body: z.object({ reason }) }, (ctx, b, req) => ps.cancelGamingSession(ctx, idParam(req), b.reason));
-  for (const [action, outcome] of [['confirm', 'CONFIRM'], ['cancel', 'CANCEL']] as const) {
-    command('post', `/playstation/payments/:id/${action}`, { op: `ps.payment_${action}`, perm: 'playstation.operate', body: z.object({ reference: z.string().max(100).nullish() }) },
-      (ctx, b, req) => ps.resolvePayment(ctx, idParam(req), outcome, b.reference));
-  }
   command('post', '/playstation/payments/:id/refund', { op: 'ps.refund', perm: 'playstation.refund', idem: 'required', body: z.object({ amountMinor: z.number().int().positive().optional(), reason }) },
     (ctx, b, req) => ps.refundPayment(ctx, idParam(req), b));
   get('/playstation/reports', (ctx, req) => ps.reports(ctx, parse(z.object({ from: dateStr, to: dateStr }), req.query)));
@@ -466,7 +509,8 @@ export function registerRoutes(app: FastifyInstance, hub: RealtimeHub) {
     const s = await getSettings(ctx.db, ctx.venueId);
     return { settings: s.playstation, paymentMethods: s.paymentMethods.filter((m) => m.enabled) };
   });
-  command('put', '/playstation/settings', { op: 'ps.settings', perm: 'playstation.manage', body: z.object({ warningMinutes: z.number().int().min(1).max(60), requirePaymentBeforeStart: z.boolean(), pauseEnabled: z.boolean() }) },
+  command('put', '/playstation/settings', { op: 'ps.settings', perm: 'playstation.manage',
+    body: z.object({ warningMinutes: z.number().int().min(1).max(60), pauseEnabled: z.boolean(), verifyNonCash: z.boolean(), proofRequiredMethods: z.array(z.string().regex(/^[A-Z0-9_]{2,24}$/)).max(10), allowSelfVerification: z.boolean() }) },
     async (ctx, b) => ({ settings: (await admin.updateSettings(ctx, { playstation: b }, 'playstation.manage')).playstation }));
 
   // ---------------------------------------------------------------- dashboard / reports / close

@@ -78,11 +78,15 @@ export const SETTING_SCHEMAS = {
     .object({
       /** Minutes before a timed gaming session ends at which the operator is warned. */
       warningMinutes: z.number().int().min(1).max(60),
-      /** true = a gaming session cannot start until it is fully paid. */
-      requirePaymentBeforeStart: z.boolean(),
       pauseEnabled: z.boolean(),
+      /** true = every non-cash payment stays pending until an authorised user verifies its evidence. */
+      verifyNonCash: z.boolean(),
+      /** Payment methods that must come with an uploaded photo/screenshot as evidence. */
+      proofRequiredMethods: z.array(z.string().regex(/^[A-Z0-9_]{2,24}$/)).max(10),
+      /** false = the person who recorded a payment cannot also verify it. */
+      allowSelfVerification: z.boolean(),
     })
-    .default({ warningMinutes: 5, requirePaymentBeforeStart: true, pauseEnabled: true }),
+    .default({ warningMinutes: 5, pauseEnabled: true, verifyNonCash: true, proofRequiredMethods: ['BANK_TRANSFER', 'TELEBIRR'], allowSelfVerification: false }),
   emergency: z
     .object({
       ambulance: z.string(), police: z.string(), fire: z.string(),
