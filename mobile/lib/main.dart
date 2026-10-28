@@ -27,7 +27,7 @@ class LightSkateApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Light Skate',
+      title: 'Light Skate Management',
       debugShowCheckedModeBanner: false,
       theme: buildLsTheme(),
       home: const _Bootstrap(),

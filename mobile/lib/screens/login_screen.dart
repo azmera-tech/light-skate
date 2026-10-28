@@ -43,18 +43,14 @@ class _LoginScreenState extends State<LoginScreen> {
               constraints: const BoxConstraints(maxWidth: 400),
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Row(children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(color: LsColors.brand, borderRadius: BorderRadius.circular(12)),
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.ice_skating, color: Colors.white),
-                  ),
+                  ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.asset('assets/brand/logo.png', width: 56, height: 56, semanticLabel: 'Light Skate logo')),
                   const SizedBox(width: 12),
-                  const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Light Skate', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                    Text('Venue operations', style: TextStyle(color: LsColors.muted)),
-                  ]),
+                  const Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Light Skate Management', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                      Text('Rink management app', style: TextStyle(color: LsColors.muted)),
+                    ]),
+                  ),
                 ]),
                 const SizedBox(height: 28),
                 TextField(

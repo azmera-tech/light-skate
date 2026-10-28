@@ -11,7 +11,7 @@ void main() {
     await tester.pumpWidget(const LightSkateApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Light Skate'), findsWidgets);
+    expect(find.text('Light Skate Management'), findsWidgets);
     expect(find.widgetWithText(ElevatedButton, 'Sign in'), findsOneWidget);
   });
 }

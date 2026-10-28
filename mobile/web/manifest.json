@@ -1,6 +1,6 @@
 {
-    "name": "light_skate_mobile",
-    "short_name": "light_skate_mobile",
+    "name": "Light Skate Management",
+    "short_name": "Light Skate",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
